@@ -11,9 +11,8 @@ fi
 
 echo "Will snapshot the instance using the $SNAPSHOT_NAME name"
 
-IS_UBUNTU=false
+IS_UBUNTU=$(UNAME_OUTPUT=$(uname -a | grep ubuntu); if [ "$UNAME_OUTPUT" != "" ]; then echo "true"; else echo "false"; fi)
 IS_CENTOS=$(if [ -f /etc/redhat-release ]; then echo "true"; else echo "false"; fi)
-
 
 #########################################################
 # Generate openrc file that will be used to upload image
@@ -95,8 +94,18 @@ if [ "$IS_UBUNTU" == true ]; then
     update-guestfs-appliance
 fi
 
+if [ "$IS_CENTOS" == true ]; then
+    FS="xfs"
+    LABEL="img-rootfs"
+fi
+
+if [ "$IS_UBUNTU" == true ]; then
+    FS="ext4"
+    LABEL=`ls /dev/disk/by-label`
+fi
+
 # This will take 3 to 5 minutes. Next, convert the tar file into a qcow2 image (if you don't want to use the XFS file system, you can replace xfs by ext4):
-virt-make-fs --partition --format=qcow2 --type=xfs --label=img-rootfs /tmp/snapshot.tar /tmp/snapshot.qcow2
+virt-make-fs --partition --format=qcow2 --type=$FS --label=$LABEL /tmp/snapshot.tar /tmp/snapshot.qcow2
 
 if [ "$IS_CENTOS" == true ]; then
     # and looking at the name of the file in that directory. Next ensure that the GRUB bootloader is present in the image:

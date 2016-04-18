@@ -75,6 +75,8 @@ export OS_REGION_NAME="regionOne"
 if [ -z "\$OS_REGION_NAME" ]; then unset OS_REGION_NAME; fi
 EOM
 
+# Source the file that has been generated above
+source openrc
 
 #################################
 # Begin the snapshotting process
@@ -115,9 +117,6 @@ qemu-img convert /tmp/snapshot.qcow2 -O qcow2 /tmp/snapshot_compressed.qcow2 -c
 ################################
 # Upload the Snapshot on Glance
 ################################
-
-# Source the file that has been generated above
-source openrc
 
 # The final steps are to upload your snapshot image to OpenStack Glance.
 glance image-create --name $SNAPSHOT_NAME --disk-format qcow2 --container-format bare < /tmp/snapshot_compressed.qcow2

@@ -3,7 +3,13 @@
 HOSTNAME=$(hostname)
 UUID=$(uuidgen)
 
-SNAPSHOT_NAME="$HOSTNAME_$UUID"
+if [ "$1" == "" ]; then
+    SNAPSHOT_NAME="$HOSTNAME_$UUID"
+else
+    SNAPSHOT_NAME="$1"
+fi
+
+echo "Will snapshot the instance using the $SNAPSHOT_NAME name"
 
 IS_UBUNTU=false
 IS_CENTOS=$(if [ -f /etc/redhat-release ]; then echo "true"; else echo "false"; fi)
@@ -13,13 +19,23 @@ IS_CENTOS=$(if [ -f /etc/redhat-release ]; then echo "true"; else echo "false"; 
 # Generate openrc file that will be used to upload image
 #########################################################
 
-function extract_json_key(json_string, key) {
-    echo $json_string | sed 's/.*$key": "//g' | sed 's/".*//g'
+# The extract_json_key function is in charge of find a key in a flat JSON value.
+# Please note that if the JSON value is not flat, it should return the first value
+# associated to the given key.
+#    $1: String that represents the key
+#    $2: String that represents the JSON value
+#    return: the value of the key in the JSON value
+# example: extract_json_key 'foo' '{"foo": 1, "bar": 2}'
+
+function extract_json_key {
+    RESULT=$(echo "$2" | sed "s/.*$1\": \"//g" | sed 's/".*//g')
+    echo "$RESULT"
 }
 
 JSON_VENDOR_DATA=$(curl http://169.254.169.254/openstack/latest/vendor_data.json)
-
-print()
+SITE=$(extract_json_key "site" "$JSON_VENDOR_DATA")
+USER_ID=$(extract_json_key "user_id" "$JSON_VENDOR_DATA")
+PROJECT_ID=$(extract_json_key "project_id" "$JSON_VENDOR_DATA")
 
 cat > openrc <<- EOM
 #!/bin/bash
@@ -35,28 +51,28 @@ cat > openrc <<- EOM
 # OpenStack API is version 2.0. For example, your cloud provider may implement
 # Image API v1.1, Block Storage API v2, and Compute API v2.0. OS_AUTH_URL is
 # only for the Identity API served through keystone.
-export OS_AUTH_URL=https://chi.uc.chameleoncloud.org:5000/v2.0
+export OS_AUTH_URL=https://chi.$SITE.chameleoncloud.org:5000/v2.0
 
 # With the addition of Keystone we have standardized on the term **tenant**
 # as the entity that owns the resources.
-export OS_TENANT_ID=Chameleon
-export OS_TENANT_NAME="Chameleon"
-export OS_PROJECT_NAME="Chameleon"
+export OS_TENANT_ID=$PROJECT_ID
+export OS_TENANT_NAME="$PROJECT_ID"
+export OS_PROJECT_NAME="$PROJECT_ID"
 
 # In addition to the owning entity (tenant), OpenStack stores the entity
 # performing the action as the **user**.
-export OS_USERNAME="jpastor"
+export OS_USERNAME="$USER_ID"
 
 # With Keystone you pass the keystone password.
 echo "Please enter your OpenStack Password: "
 read -sr OS_PASSWORD_INPUT
-export OS_PASSWORD=$OS_PASSWORD_INPUT
+export OS_PASSWORD=\$OS_PASSWORD_INPUT
 
 # If your configuration has multiple regions, we set that information here.
 # OS_REGION_NAME is optional and only valid in certain environments.
 export OS_REGION_NAME="regionOne"
 # Don't leave a blank variable, unset it if it was empty
-if [ -z "$OS_REGION_NAME" ]; then unset OS_REGION_NAME; fi
+if [ -z "\$OS_REGION_NAME" ]; then unset OS_REGION_NAME; fi
 EOM
 
 
@@ -100,6 +116,9 @@ qemu-img convert /tmp/snapshot.qcow2 -O qcow2 /tmp/snapshot_compressed.qcow2 -c
 # Upload the Snapshot on Glance
 ################################
 
-# The final steps are to upload your snapshot image to OpenStack Glance. First, visit the Access & Security tab in the OpenStack web interface and "Download OpenStack RC File". Copy this file to your instance and source it. Then simply use the glance client program to upload your image.
+# Source the file that has been generated above
+source openrc
+
+# The final steps are to upload your snapshot image to OpenStack Glance.
 glance image-create --name $SNAPSHOT_NAME --disk-format qcow2 --container-format bare < /tmp/snapshot_compressed.qcow2
 

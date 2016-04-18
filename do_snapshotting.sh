@@ -9,7 +9,7 @@ else
     SNAPSHOT_NAME="$1"
 fi
 
-echo "Will snapshot the instance using the $SNAPSHOT_NAME name"
+echo "Will snapshot the instance using the following name: '$SNAPSHOT_NAME'"
 
 IS_UBUNTU=$(UNAME_OUTPUT=$(uname -a | grep ubuntu); if [ "$UNAME_OUTPUT" != "" ]; then echo "true"; else echo "false"; fi)
 IS_CENTOS=$(if [ -f /etc/redhat-release ]; then echo "true"; else echo "false"; fi)
@@ -31,8 +31,15 @@ function extract_json_key {
     echo "$RESULT"
 }
 
-JSON_VENDOR_DATA=$(curl http://169.254.169.254/openstack/latest/vendor_data.json)
+JSON_VENDOR_DATA=$(curl -s http://169.254.169.254/openstack/latest/vendor_data.json)
 SITE=$(extract_json_key "site" "$JSON_VENDOR_DATA")
+
+if [ "$SITE" != "tacc" ] && [ "$SITE" != "uc" ]; then
+    # The current instance  is apparently not a baremetal node.
+    echo "ERROR: Could not understand which site you are using, please  be sure that you run the script inside a baremetal instance!"
+    exit 1
+fi
+
 USER_ID=$(extract_json_key "user_id" "$JSON_VENDOR_DATA")
 PROJECT_ID=$(extract_json_key "project_id" "$JSON_VENDOR_DATA")
 
@@ -129,4 +136,6 @@ qemu-img convert /tmp/snapshot.qcow2 -O qcow2 /tmp/snapshot_compressed.qcow2 -c
 
 # The final steps are to upload your snapshot image to OpenStack Glance.
 glance image-create --name $SNAPSHOT_NAME --disk-format qcow2 --container-format bare < /tmp/snapshot_compressed.qcow2
+
+exit 0
 

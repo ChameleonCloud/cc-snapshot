@@ -100,8 +100,10 @@ fi
 tar cf /tmp/snapshot.tar / --selinux --acls --xattrs --numeric-owner --one-file-system --exclude=/tmp/* --exclude=/proc/* --exclude=/boot/extlinux
 
 if [ "$IS_UBUNTU" == true ]; then
-    # Update guestfs appliances (prevent an error with virt-make-fs)
-    update-guestfs-appliance
+    # Update guestfs appliances (prevent an error with virt-make-fs);
+    # BUG: one package cannot be found (kpartx) and cause update-guestfs-appliance
+    #      to exit with an error code;
+    update-guestfs-appliance || true
 fi
 
 if [ "$IS_CENTOS" == true ]; then

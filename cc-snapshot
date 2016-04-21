@@ -46,7 +46,7 @@ fi
 USER_ID=$(extract_json_key "user_id" "$JSON_VENDOR_DATA")
 PROJECT_ID=$(extract_json_key "project_id" "$JSON_VENDOR_DATA")
 
-cat > openrc <<- EOM
+cat > /tmp/openrc <<- EOM
 #!/bin/bash
 
 # To use an OpenStack cloud you need to authenticate against the Identity
@@ -85,7 +85,7 @@ if [ -z "\$OS_REGION_NAME" ]; then unset OS_REGION_NAME; fi
 EOM
 
 # Source the file that has been generated above
-source openrc
+source /tmp/openrc
 
 #################################
 # Begin the snapshotting process

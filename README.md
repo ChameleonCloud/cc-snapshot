@@ -13,7 +13,7 @@ The script requires the following dependencies:
 **Use this script from a baremetal instance**. To snapshot a baremetal instance, simply run the script with the following command:
 
 ```
-sudo bash cc-snapshot <faculative_name>
+sudo bash cc-snapshot <snapshot_name>
 ```
 
 It will ask for your Chameleon password, and after few minutes, a snapshot will be uploaded on the Glance corresponding to the instance's site (UC or TACC).

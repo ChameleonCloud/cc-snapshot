@@ -15,7 +15,7 @@ fi
 
 echo "Will snapshot the instance using the following name: '$SNAPSHOT_NAME'"
 
-IS_UBUNTU=$(UNAME_OUTPUT=$(uname -a | grep ubuntu); if [ "$UNAME_OUTPUT" != "" ]; then echo "true"; else echo "false"; fi)
+IS_UBUNTU=$(UNAME_OUTPUT=$(uname -a | tr '[:upper:]' '[:lower:]' | grep ubuntu); if [ "$UNAME_OUTPUT" != "" ]; then echo "true"; else echo "false"; fi)
 if [ -z ${var+x} ]; then
     UBUNTU_VERSION=$(lsb_release -c | awk '{print $2}')
 else
@@ -114,10 +114,15 @@ else
 fi
 tar cf /tmp/snapshot.tar / --selinux --acls $TAR_ARGS --numeric-owner --one-file-system --exclude=/tmp/* --exclude=/proc/* --exclude=/boot/extlinux
 
+if [ "$UBUNTU_VERSION"=="xenial" ]; then
+   apt-get install -y libguestfs-tools
+else
+
 if [ "$IS_UBUNTU" == true ]; then
     # Update guestfs appliances (prevent an error with virt-make-fs);
     # BUG: one package cannot be found (kpartx) and cause update-guestfs-appliance
     #      to exit with an error code;
+    apt-get install -y kpartx
     update-guestfs-appliance || true
 fi
 

@@ -2,12 +2,13 @@
 
 set -eu
 set -o pipefail
+set -x
 
 HOSTNAME=$(hostname)
 UUID=$(uuidgen)
 
-if [ "$1" == "" ]; then
-    SNAPSHOT_NAME="$HOSTNAME_$UUID"
+if [ $# -eq 0 ]; then
+    SNAPSHOT_NAME="${HOSTNAME}_${UUID}"
 else
     SNAPSHOT_NAME="$1"
 fi
@@ -15,6 +16,11 @@ fi
 echo "Will snapshot the instance using the following name: '$SNAPSHOT_NAME'"
 
 IS_UBUNTU=$(UNAME_OUTPUT=$(uname -a | grep ubuntu); if [ "$UNAME_OUTPUT" != "" ]; then echo "true"; else echo "false"; fi)
+if [ -z ${var+x} ]; then
+    UBUNTU_VERSION=$(lsb_release -c | awk '{print $2}')
+else
+    UBUNTU_VERSION=""
+fi
 IS_CENTOS=$(if [ -f /etc/redhat-release ]; then echo "true"; else echo "false"; fi)
 
 #########################################################
@@ -84,8 +90,12 @@ export OS_REGION_NAME="regionOne"
 if [ -z "\$OS_REGION_NAME" ]; then unset OS_REGION_NAME; fi
 EOM
 
+set +x
+
 # Source the file that has been generated above
 source /tmp/openrc
+
+set -x
 
 #################################
 # Begin the snapshotting process
@@ -97,7 +107,12 @@ if [ "$IS_CENTOS" == true ]; then
 fi
 
 # Create a tar file of the contents of your instance:
-tar cf /tmp/snapshot.tar / --selinux --acls --xattrs --numeric-owner --one-file-system --exclude=/tmp/* --exclude=/proc/* --exclude=/boot/extlinux
+if [ "$UBUNTU_VERSION"=="xenial" ]; then
+   TAR_ARGS=""
+else
+   TAR_ARGS="--xattrs"
+fi
+tar cf /tmp/snapshot.tar / --selinux --acls $TAR_ARGS --numeric-owner --one-file-system --exclude=/tmp/* --exclude=/proc/* --exclude=/boot/extlinux
 
 if [ "$IS_UBUNTU" == true ]; then
     # Update guestfs appliances (prevent an error with virt-make-fs);

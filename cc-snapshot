@@ -114,7 +114,7 @@ else
 fi
 tar cf /tmp/snapshot.tar / --selinux --acls $TAR_ARGS --numeric-owner --one-file-system --exclude=/tmp/* --exclude=/proc/* --exclude=/boot/extlinux
 
-if [ "$UBUNTU_VERSION"=="xenial" ]; then
+if [ "$UBUNTU_VERSION" == "xenial" ]; then
    apt-get install -y libguestfs-tools
 fi
 

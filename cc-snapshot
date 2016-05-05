@@ -116,7 +116,7 @@ tar cf /tmp/snapshot.tar / --selinux --acls $TAR_ARGS --numeric-owner --one-file
 
 if [ "$UBUNTU_VERSION"=="xenial" ]; then
    apt-get install -y libguestfs-tools
-else
+fi
 
 if [ "$IS_UBUNTU" == true ]; then
     # Update guestfs appliances (prevent an error with virt-make-fs);

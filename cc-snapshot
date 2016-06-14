@@ -111,8 +111,15 @@ if [ "$UBUNTU_VERSION"=="xenial" ]; then
 else
    TAR_ARGS="--xattrs"
 fi
-tar cf /tmp/snapshot.tar / --selinux --acls $TAR_ARGS --numeric-owner --one-file-system  --exclude=/tmp/snapshot.tar --exclude=/tmp/* --exclude=/proc/* --exclude=/var/tmp/* --exclude=/boot/extlinux --exclude=/sys
 
+# The following code is inspired from http://unix.stackexchange.com/questions/82598
+n=0
+until [ $n -ge 5 ]
+do
+   tar cf /tmp/snapshot.tar / --selinux --acls $TAR_ARGS --numeric-owner --one-file-system  --exclude=/tmp/snapshot.tar --exclude=/tmp/* --exclude=/proc/* --exclude=/var/tmp/* --exclude=/boot/extlinux && break
+   n=$[$n+1]
+   sleep 15
+done
 if [ "$UBUNTU_VERSION" == "xenial" ]; then
    apt-get install -y libguestfs-tools
 fi

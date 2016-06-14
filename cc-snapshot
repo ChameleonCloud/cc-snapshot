@@ -89,12 +89,12 @@ export OS_REGION_NAME="regionOne"
 if [ -z "\$OS_REGION_NAME" ]; then unset OS_REGION_NAME; fi
 EOM
 
-set +x
+# set +x
 
 # Source the file that has been generated above
 source /tmp/openrc
 
-set -x
+# set -x
 
 #################################
 # Begin the snapshotting process

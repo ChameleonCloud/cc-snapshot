@@ -120,6 +120,7 @@ do
    n=$[$n+1]
    sleep 15
 done
+
 if [ "$UBUNTU_VERSION" == "xenial" ]; then
    apt-get install -y libguestfs-tools
 fi

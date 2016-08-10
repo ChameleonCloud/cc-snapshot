@@ -129,6 +129,7 @@ if [ "$IS_UBUNTU" == true ]; then
     # Update guestfs appliances (prevent an error with virt-make-fs);
     # BUG: one package cannot be found (kpartx) and cause update-guestfs-appliance
     #      to exit with an error code;
+    apt-get -y update # APT repos may need an update in order to find kpartx
     apt-get install -y kpartx
     if [ "$(which update-guestfs-appliance)" != "" ]; then
         update-guestfs-appliance || true

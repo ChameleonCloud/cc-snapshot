@@ -1,19 +1,22 @@
-# ChameleonSnapshotting
+# cc-snapshot
 
-This repository contains a script in charge of snapshotting baremetal instances.
+cc-snapshot takes snapshots of baremetal instances on the [Chameleon testbed](https://www.chameleoncloud.org).
 
 ## Dependencies
 
 The script requires the following dependencies:
+
 * Ubuntu or CentOS system
 * Baremetal instance
 
 ## Usage
 
-**Use this script from a baremetal instance**. To snapshot a baremetal instance, simply run the script with the following command:
+**Use this script from a Chameleon baremetal instance**. To snapshot a baremetal instance, when logged into the instance via SSH, run cc-snapshot with the following command:
 
 ```
-sudo bash cc-snapshot <snapshot_name>
+sudo cc-snapshot [snapshot_name]
 ```
 
-It will ask for your Chameleon password, and after few minutes, a snapshot will be uploaded on the Glance corresponding to the instance's site (UC or TACC).
+You can optionally specify a snapshot name. If no argument is present, the snapshot name is set to the instance hostname followed by a universally unique identifier.
+
+cc-snapshot will ask for your Chameleon password, and after a few minutes, a snapshot will be uploaded in the image repository of the instance's site (UC or TACC).

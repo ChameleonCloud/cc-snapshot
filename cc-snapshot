@@ -3,6 +3,35 @@
 set -eu
 set -o pipefail
 
+PARTITION_IMAGE=false
+
+print_usage() {
+  echo "usage: $0 [-p] snapshot_name"
+  echo "Optional arguments:"
+  echo ""
+  echo "  -h        Print this help message"
+  echo "  -p        Create a partition image (separate kernel and ramdisk, no MBR)"
+}
+
+while getopts ":hp" opt; do
+  case $opt in
+    h)
+      print_usage
+      exit 0
+      ;;
+    p)
+      PARTITION_IMAGE=true
+      ;;
+    \?)
+      echo "Invalid option: -$OPTARG" >&2
+      print_usage
+      exit 1
+      ;;
+  esac
+done
+
+shift $((OPTIND-1))
+
 HOSTNAME=$(hostname)
 UUID=$(uuidgen)
 
@@ -145,17 +174,28 @@ if [ "$IS_UBUNTU" == true ]; then
     LABEL=`ls /dev/disk/by-label`
 fi
 
-# This will take 3 to 5 minutes. Next, convert the tar file into a qcow2 image (if you don't want to use the XFS file system, you can replace xfs by ext4):
-virt-make-fs --partition --format=qcow2 --type=$FS --label=$LABEL /tmp/snapshot.tar /tmp/snapshot.qcow2
-
-if [ "$IS_CENTOS" == true ]; then
-    # and looking at the name of the file in that directory. Next ensure that the GRUB bootloader is present in the image:
-    virt-customize -a /tmp/snapshot.qcow2 --run-command 'grub2-install /dev/sda && grub2-mkconfig -o /boot/grub2/grub.cfg'
+# Confusingly, virt-make-fs uses the --partition flag to request adding an MBR
+# to the image, while what we (and Ironic) call partition images are images
+# without MBR, hence the inverted logic with the PARTITION_IMAGE variable.
+if [ "$PARTITION_IMAGE" == false ]; then
+    VIRT_MAKE_FS="virt-make-fs --partition"
+else
+    VIRT_MAKE_FS="virt-make-fs"
 fi
 
-if [ "$IS_UBUNTU" == true ]; then
-    # Next ensure that the GRUB bootloader is present in the image:
-    guestfish -a /tmp/snapshot.qcow2 -i sh 'grub-install /dev/sda && grub-mkconfig -o /boot/grub/grub.cfg'
+# This will take 3 to 5 minutes. Next, convert the tar file into a qcow2 image (if you don't want to use the XFS file system, you can replace xfs by ext4):
+$VIRT_MAKE_FS --format=qcow2 --type=$FS --label=$LABEL /tmp/snapshot.tar /tmp/snapshot.qcow2
+
+if [ "$PARTITION_IMAGE" == false ]; then
+    if [ "$IS_CENTOS" == true ]; then
+        # and looking at the name of the file in that directory. Next ensure that the GRUB bootloader is present in the image:
+        virt-customize -a /tmp/snapshot.qcow2 --run-command 'grub2-install /dev/sda && grub2-mkconfig -o /boot/grub2/grub.cfg'
+    fi
+
+    if [ "$IS_UBUNTU" == true ]; then
+        # Next ensure that the GRUB bootloader is present in the image:
+        guestfish -a /tmp/snapshot.qcow2 -i sh 'grub-install /dev/sda && grub-mkconfig -o /boot/grub/grub.cfg'
+    fi
 fi
 
 # To remove unwanted configuration information from your image, run:
@@ -169,7 +209,14 @@ qemu-img convert /tmp/snapshot.qcow2 -O qcow2 /tmp/snapshot_compressed.qcow2 -c
 ################################
 
 # The final steps are to upload your snapshot image to OpenStack Glance.
-glance image-create --name $SNAPSHOT_NAME --disk-format qcow2 --container-format bare < /tmp/snapshot_compressed.qcow2
+if [ "$PARTITION_IMAGE" == false ]; then
+    glance image-create --name $SNAPSHOT_NAME --disk-format qcow2 --container-format bare < /tmp/snapshot_compressed.qcow2
+else
+    echo "You asked for a partition image."
+    echo "You will need to upload your kernel and ramdisk to Glance before uploading your image."
+    echo "You may want to run 'source /tmp/openrc' to set your OpenStack credentials."
+    echo "After kernel and ramdisk are uploaded, run:"
+    echo "glance image-create --name $SNAPSHOT_NAME --disk-format qcow2 --container-format bare --property kernel_id=IMAGE_VMLINUZ_UUID --property ramdisk_id=IMAGE_INITRD_UUID < /tmp/snapshot_compressed.qcow2"
+fi
 
 exit 0
-

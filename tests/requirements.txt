@@ -1,0 +1,12 @@
+fabric3
+-e git+https://github.com/ChameleonCloud/hammers#egg=hammers
+paramiko
+-e git+https://github.com/openstack/python-blazarclient@a3448e55107c77d3bbeb8914005b31783127ab34#egg=python-blazarclient
+python-ceilometerclient
+python-heatclient
+python-keystoneclient
+python-neutronclient
+python-openstackclient
+python-novaclient==7.1.0
+python-swiftclient
+ulid

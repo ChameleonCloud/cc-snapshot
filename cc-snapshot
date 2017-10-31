@@ -43,13 +43,14 @@ fi
 
 echo "Will snapshot the instance using the following name: '$SNAPSHOT_NAME'"
 
-IS_UBUNTU=$(UNAME_OUTPUT=$(uname -a | tr '[:upper:]' '[:lower:]' | grep ubuntu); if [ "$UNAME_OUTPUT" != "" ]; then echo "true"; else echo "false"; fi)
-if [ -z ${var+x} ]; then
+DISTRO=$(gawk -F= '/^NAME/{print $2}' /etc/os-release | tr -d \"\' | tr ' ' '-')
+UBUNTU='Ubuntu'
+CENTOS='CentOS-Linux'
+
+UBUNTU_VERSION=''
+if [ $DISTRO = $UBUNTU ]; then
     UBUNTU_VERSION=$(lsb_release -c | awk '{print $2}')
-else
-    UBUNTU_VERSION=""
 fi
-IS_CENTOS=$(if [ -f /etc/redhat-release ]; then echo "true"; else echo "false"; fi)
 
 #########################################################
 # Generate openrc file that will be used to upload image
@@ -101,14 +102,14 @@ export OS_TENANT_ID=$PROJECT_ID
 
 # In addition to the owning entity (tenant), OpenStack stores the entity
 # performing the action as the **user**.
-echo "Please enter your Chameleon username: "
-read -r OS_USERNAME_INPUT
-export OS_USERNAME=\$OS_USERNAME_INPUT
+#echo "Please enter your Chameleon username: "
+#read -r OS_USERNAME_INPUT
+#export OS_USERNAME=\$OS_USERNAME_INPUT
 
 # With Keystone you pass the keystone password.
-echo "Please enter your Chameleon password: "
-read -sr OS_PASSWORD_INPUT
-export OS_PASSWORD=\$OS_PASSWORD_INPUT
+#echo "Please enter your Chameleon password: "
+#read -sr OS_PASSWORD_INPUT
+#export OS_PASSWORD=\$OS_PASSWORD_INPUT
 
 # If your configuration has multiple regions, we set that information here.
 # OS_REGION_NAME is optional and only valid in certain environments.
@@ -128,9 +129,10 @@ source /tmp/openrc
 # Begin the snapshotting process
 #################################
 
-if [ "$IS_CENTOS" == true ]; then
+if [ $DISTRO = $CENTOS ]; then
     # Install prerequisite software (only required for XFS file systems, which is the default on CentOS 7):
     yum install -y libguestfs-xfs
+    yum update -y lvm2 # must be at least 2.02-171 to avoid bug https://bugzilla.redhat.com/show_bug.cgi?id=1475018
 fi
 
 # Create a tar file of the contents of your instance:
@@ -149,11 +151,11 @@ do
    sleep 15
 done
 
-if [ "$UBUNTU_VERSION" == "xenial" ]; then
-   apt-get install -y libguestfs-tools
-fi
+if [ $DISTRO = $UBUNTU ]; then
+    if [ $UBUNTU_VERSION = "xenial" ]; then
+    apt-get install -y libguestfs-tools
+    fi
 
-if [ "$IS_UBUNTU" == true ]; then
     # Update guestfs appliances (prevent an error with virt-make-fs);
     # BUG: one package cannot be found (kpartx) and cause update-guestfs-appliance
     #      to exit with an error code;
@@ -162,16 +164,14 @@ if [ "$IS_UBUNTU" == true ]; then
     if [ "$(which update-guestfs-appliance)" != "" ]; then
         update-guestfs-appliance || true
     fi
-fi
 
-if [ "$IS_CENTOS" == true ]; then
-    FS="xfs"
-    LABEL="img-rootfs"
-fi
-
-if [ "$IS_UBUNTU" == true ]; then
     FS="ext4"
     LABEL=`ls /dev/disk/by-label`
+fi
+
+if [ $DISTRO = $CENTOS ]; then
+    FS="xfs"
+    LABEL="img-rootfs"
 fi
 
 ARCH=`uname -i`
@@ -195,12 +195,12 @@ fi
 $VIRT_MAKE_FS --format=qcow2 --type=$FS --label=$LABEL /tmp/snapshot.tar /tmp/snapshot.qcow2
 
 if [ "$PARTITION_IMAGE" == false ]; then
-    if [ "$IS_CENTOS" == true ]; then
+    if [ $DISTRO = $CENTOS ]; then
         # and looking at the name of the file in that directory. Next ensure that the GRUB bootloader is present in the image:
         virt-customize -a /tmp/snapshot.qcow2 --run-command 'grub2-install /dev/sda && grub2-mkconfig -o /boot/grub2/grub.cfg'
     fi
 
-    if [ "$IS_UBUNTU" == true ]; then
+    if [ $DISTRO = $UBUNTU ]; then
         # Next ensure that the GRUB bootloader is present in the image:
         guestfish -a /tmp/snapshot.qcow2 -i sh 'grub-install /dev/sda && grub-mkconfig -o /boot/grub/grub.cfg'
     fi

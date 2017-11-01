@@ -1,6 +1,7 @@
 import argparse
 import datetime
 import os
+import secrets
 import sys
 import time
 
@@ -56,9 +57,20 @@ def execute_snapshot(remote, key_file, rc):
         'OS_PASSWORD': rc['OS_PASSWORD'],
     }
 
+    # contrive passwords for debugging
+    ccpass = secrets.token_hex(nbytes=128 // 8)
+    ccapass = secrets.token_hex(nbytes=128 // 8)
+    print('Debug Passwords:')
+    print('{:>10s} {}'.format('cc', ccpass))
+    print('{:>10s} {}'.format('ccadmin', ccapass))
+
     with fapi.settings(**fab_settings), \
          fcm.cd(REMOTE_WORKSPACE), \
          fcm.shell_env(**remote_env):
+
+        # debug passwords
+        fapi.sudo("echo -e 'cc:{}\\nccadmin:{}' | chpasswd".format(ccpass, ccapass))
+
         fapi.run('chmod +x cc-snapshot')
         out = fapi.sudo('./cc-snapshot')
 
@@ -111,15 +123,20 @@ def test_simple(lease, session, rc, key_file, image='CC-CentOS7'):
     new_image = execute_snapshot(instance.ip, key_file, rc)
 
     # # see if the resulting image is any good
-    # instance.delete()
-    # instance = lease.create_instance(image=new_image['id'], net_ids=nets)
-    instance.server.rebuild(new_image['id'])
-    instance.wait()
-    # instance.associate_floating_ip()
+    if False: # rebuild...I think this is broken because it doesn't trigger cloud-init correctly?
+        instance.server.rebuild(new_image['id'])
+        instance.wait()
+    else:
+        instance.delete()
+        time.sleep(30) # let it clean up
+        instance = lease.create_server(image=new_image['id'], net_ids=nets)
+        instance.wait()
+        instance.associate_floating_ip()
+
     ssh = wait_for_ssh(instance.ip, key_file, raise_error=False, verbose=True)
-    input('Press return to continue...')
+    # input('Press return to continue...')
     test_instance_working(instance.ip, key_file)
-    input('Press return to continue...')
+    # input('Press return to continue...')
 
 
 def main():
@@ -159,7 +176,7 @@ def main():
     )
     print(now(), 'Lease: {}'.format(lease))
     with lease:
-        test_simple(lease, session, rc, key_file)
+        test_simple(lease, session, rc, key_file, image=args.image)
 
 
 if __name__ == '__main__':

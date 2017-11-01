@@ -152,12 +152,21 @@ def main():
              'then to the string "~/.ssh/id_rsa"',
         default=os.environ.get('KEY_FILE', '~/.ssh/id_rsa'),
     )
-
+    parser.add_argument(
+        '-n', '--no-clean', action='store_true',
+        help='Don\'t clean up the lease on a crash (allows for debugging)',
+    )
+    parser.add_argument(
+        '-v', '--verbose', action='store_true',
+        help='Increase verbosity',
+    )
     add_arguments(parser)
 
     args = parser.parse_args()
 
     key_file = args.key_file
+    if args.verbose:
+        print('key file: {}'.format(key_file))
     # if key_file is None:
     #     try:
     #         key_file = os.environ['KEY_FILE']
@@ -173,6 +182,7 @@ def main():
         name='test-{}'.format(BUILD_TAG),
         length=datetime.timedelta(minutes=240),
         sequester=True,
+        _no_clean=args.no_clean,
     )
     print(now(), 'Lease: {}'.format(lease))
     with lease:

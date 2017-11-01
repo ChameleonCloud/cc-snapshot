@@ -39,4 +39,7 @@ pip freeze | grep hammers # hammers version (master branch, so somewhat volatile
 nova keypair-show default > /dev/null
 
 python tests.py \
-  --image=$IMAGE
+  --image=$IMAGE \
+  --key-file=$KEY_FILE \
+  --verbose \
+  --no-clean

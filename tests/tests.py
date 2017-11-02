@@ -64,6 +64,18 @@ def execute_snapshot(remote, key_file, rc):
     print('{:>10s} {}'.format('cc', ccpass))
     print('{:>10s} {}'.format('ccadmin', ccapass))
 
+    # test fast fail
+    start = time.monotonic()
+    with fapi.settings(**fab_settings), \
+         fcm.cd(REMOTE_WORKSPACE), \
+         fcm.shell_env(OS_USERNAME='wrong', OS_PASSWORD='wrong'):
+        fapi.run('chmod +x cc-snapshot')
+
+        out = fapi.sudo('./cc-snapshot')
+
+    assert out.return_code != 0
+    assert 'check username' in out
+
     with fapi.settings(**fab_settings), \
          fcm.cd(REMOTE_WORKSPACE), \
          fcm.shell_env(**remote_env):
@@ -71,7 +83,7 @@ def execute_snapshot(remote, key_file, rc):
         # debug passwords
         fapi.sudo("echo -e 'cc:{}\\nccadmin:{}' | chpasswd".format(ccpass, ccapass))
 
-        fapi.run('chmod +x cc-snapshot')
+        # fapi.run('chmod +x cc-snapshot')
         out = fapi.sudo('./cc-snapshot')
 
     if out.return_code != 0:
@@ -177,8 +189,10 @@ def main():
 
     args = parser.parse_args()
 
+    key_file = args.key_file
+    key_file = os.path.expanduser(key_file)
     if args.verbose:
-        print('key file: {}'.format(args.key_file))
+        print('key file: {}'.format(key_file))
 
     session, rc = session_from_args(args=args, rc=True)
 
@@ -191,7 +205,7 @@ def main():
     )
     print(now(), 'Lease: {}'.format(lease))
     with lease:
-        test_simple(lease, session, rc, args.key_file, args.key_name, image=args.image)
+        test_simple(lease, session, rc, key_file, args.key_name, image=args.image)
 
 
 if __name__ == '__main__':

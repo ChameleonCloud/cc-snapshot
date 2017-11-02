@@ -35,11 +35,13 @@ pip install -r requirements.txt >> pip.log
 
 pip freeze | grep hammers # hammers version (master branch, so somewhat volatile)
 
-# check the keypair exists
-nova keypair-show default > /dev/null
+KEY_NAME=${KEY_NAME:-default}
+# check the keypair exists (TODO: check the fingerprints match the $KEY_FILE)
+nova keypair-show $KEY_NAME > /dev/null
 
 python tests.py \
   --image=$IMAGE \
+  --key-name=$KEY_NAME \
   --key-file=$KEY_FILE \
   --verbose \
   --no-clean

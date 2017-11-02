@@ -106,10 +106,15 @@ def test_instance_working(remote, key_file):
     '''Basic exercise of functionality to make sure things are OK'''
 
 
-def test_simple(lease, session, rc, key_file, image='CC-CentOS7'):
+def test_simple(lease, session, rc, key_file, key_name, image='CC-CentOS7'):
     # create initial instance
     nets = [get_net(session)['id']]
-    instance = lease.create_server(image=image, net_ids=nets)
+    instance = lease.create_server(
+        name='snapshotme-{}'.format(BUILD_TAG),
+        key=key_name,
+        image=image,
+        net_ids=nets,
+    )
     instance.wait()
     instance.associate_floating_ip()
     ssh = wait_for_ssh(instance.ip, key_file, verbose=True)
@@ -129,7 +134,11 @@ def test_simple(lease, session, rc, key_file, image='CC-CentOS7'):
     else:
         instance.delete()
         time.sleep(30) # let it clean up
-        instance = lease.create_server(image=new_image['id'], net_ids=nets)
+        instance = lease.create_server(
+            name='didthiswork-{}'.format(BUILD_TAG),
+            image=new_image['id'],
+            net_ids=nets,
+        )
         instance.wait()
         instance.associate_floating_ip()
 
@@ -147,10 +156,14 @@ def main():
         help='Image (name or ID) to use',
     )
     parser.add_argument(
-        '-k', '--key-file', type=str,
-        help='Path to SSH key. If not provided, falls back to envvar KEY_FILE '
-             'then to the string "~/.ssh/id_rsa"',
+        '--key-name', type=str, default='default',
+        help='SSH keypair name on OS used to create an instance.'
+    )
+    parser.add_argument(
+        '--key-file', type=str,
         default=os.environ.get('KEY_FILE', '~/.ssh/id_rsa'),
+        help='Path to SSH key associated with the key-name. If not provided, '
+             'falls back to envvar KEY_FILE then to the string "~/.ssh/id_rsa"',
     )
     parser.add_argument(
         '-n', '--no-clean', action='store_true',
@@ -164,29 +177,21 @@ def main():
 
     args = parser.parse_args()
 
-    key_file = args.key_file
     if args.verbose:
-        print('key file: {}'.format(key_file))
-    # if key_file is None:
-    #     try:
-    #         key_file = os.environ['KEY_FILE']
-    #     except KeyError:
-    #         print('Neither KEY_FILE set in environment nor --key-file option '
-    #               'provided: one must be.', file=sys.stderr)
-    #         return 1
+        print('key file: {}'.format(args.key_file))
 
     session, rc = session_from_args(args=args, rc=True)
 
     lease = Lease(
         keystone_session=session,
-        name='test-{}'.format(BUILD_TAG),
+        name='test-lease-{}'.format(BUILD_TAG),
         length=datetime.timedelta(minutes=240),
         sequester=True,
         _no_clean=args.no_clean,
     )
     print(now(), 'Lease: {}'.format(lease))
     with lease:
-        test_simple(lease, session, rc, key_file, image=args.image)
+        test_simple(lease, session, rc, args.key_file, args.key_name, image=args.image)
 
 
 if __name__ == '__main__':

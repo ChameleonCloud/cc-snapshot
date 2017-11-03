@@ -6,14 +6,15 @@ set -o pipefail
 PARTITION_IMAGE=false
 
 print_usage() {
-  echo "usage: $0 [-p] snapshot_name"
+  echo "usage: $0 [-p] [-e] folder_to_exclude snapshot_name"
   echo "Optional arguments:"
   echo ""
   echo "  -h        Print this help message"
   echo "  -p        Create a partition image (separate kernel and ramdisk, no MBR)"
+  echo "  -e        Exclude folder while snapshotting (can be used multiple times to exclude multiple folders)"
 }
 
-while getopts ":hp" opt; do
+while getopts ":hpe:" opt; do
   case $opt in
     h)
       print_usage
@@ -21,6 +22,9 @@ while getopts ":hp" opt; do
       ;;
     p)
       PARTITION_IMAGE=true
+      ;;
+    e)
+      EXCLUDE_FOLDERS+=("$OPTARG")
       ;;
     \?)
       echo "Invalid option: -$OPTARG" >&2
@@ -42,6 +46,15 @@ else
 fi
 
 echo "Will snapshot the instance using the following name: '$SNAPSHOT_NAME'"
+
+if [[ -z "${EXCLUDE_FOLDERS[@]+x}" ]]; then
+    EXCLUDE_STRING=""
+else
+    for folder in "${EXCLUDE_FOLDERS[@]}"; do
+        echo "Will exclude folder: $folder"
+        EXCLUDE_STRING+="--exclude $folder "
+    done
+fi
 
 IS_UBUNTU=$(UNAME_OUTPUT=$(uname -a | tr '[:upper:]' '[:lower:]' | grep ubuntu); if [ "$UNAME_OUTPUT" != "" ]; then echo "true"; else echo "false"; fi)
 if [ -z ${var+x} ]; then
@@ -144,7 +157,7 @@ fi
 n=0
 until [ $n -ge 5 ]
 do
-   tar cf /tmp/snapshot.tar / --selinux --acls $TAR_ARGS --numeric-owner --one-file-system  --exclude=/tmp/snapshot.tar --exclude=/tmp/* --exclude=/proc/* --exclude=/var/tmp/* --exclude=/boot/extlinux && break
+   tar cf /tmp/snapshot.tar / --selinux --acls $TAR_ARGS --numeric-owner --one-file-system  --exclude=/tmp/snapshot.tar --exclude=/tmp/* --exclude=/proc/* --exclude=/var/tmp/* --exclude=/boot/extlinux $EXCLUDE_STRING && break
    n=$[$n+1]
    sleep 15
 done

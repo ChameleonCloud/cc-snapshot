@@ -14,7 +14,7 @@ print_usage() {
   echo "  -e        Exclude folder while snapshotting (can be used multiple times to exclude multiple folders)"
 }
 
-while getopts ":hp:e:" opt; do
+while getopts ":hpe:" opt; do
   case $opt in
     h)
       print_usage
@@ -25,6 +25,7 @@ while getopts ":hp:e:" opt; do
       ;;
     e)
       EXCLUDE_FOLDERS+=("$OPTARG")
+      ;;
     \?)
       echo "Invalid option: -$OPTARG" >&2
       print_usage
@@ -46,10 +47,14 @@ fi
 
 echo "Will snapshot the instance using the following name: '$SNAPSHOT_NAME'"
 
-for folder in "${EXCLUDE_FOLDERS[@]}"; do
-    echo "Will exclude folder: $folder"
-    EXCLUDE_STRING+="--exclude $folder "
-done
+if [[ -z "${EXCLUDE_FOLDERS[@]+x}" ]]; then
+    EXCLUDE_STRING=""
+else
+    for folder in "${EXCLUDE_FOLDERS[@]}"; do
+        echo "Will exclude folder: $folder"
+        EXCLUDE_STRING+="--exclude $folder "
+    done
+fi
 
 IS_UBUNTU=$(UNAME_OUTPUT=$(uname -a | tr '[:upper:]' '[:lower:]' | grep ubuntu); if [ "$UNAME_OUTPUT" != "" ]; then echo "true"; else echo "false"; fi)
 if [ -z ${var+x} ]; then

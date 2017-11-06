@@ -1,6 +1,7 @@
 import argparse
 import datetime
 import os
+from pprint import pprint
 import secrets
 import sys
 import time
@@ -41,6 +42,14 @@ def copy_repo_to_remote(remote, keypath):
 
 def execute_snapshot(remote, key_file, rc):
     '''Do the snapshot'''
+    remote_env = {
+        'OS_USERNAME': rc['OS_USERNAME'],
+        'OS_PASSWORD': rc['OS_PASSWORD'],
+    }
+    # prompts = {
+    #     'Please enter your Chameleon username: ': rc['OS_USERNAME'],
+    #     'Please enter your Chameleon password: ': rc['OS_PASSWORD'],
+    # }
     fab_settings = {
         'user': 'cc',
         'host_string': remote,
@@ -51,10 +60,7 @@ def execute_snapshot(remote, key_file, rc):
         # no security!
         'reject_unknown_hosts': False,
         'disable_known_hosts': True,
-    }
-    remote_env = {
-        'OS_USERNAME': rc['OS_USERNAME'],
-        'OS_PASSWORD': rc['OS_PASSWORD'],
+        # 'prompts': prompts,
     }
 
     # contrive passwords for debugging
@@ -65,6 +71,7 @@ def execute_snapshot(remote, key_file, rc):
     print('{:>10s} {}'.format('ccadmin', ccapass))
 
     # test fast fail
+    print('checking if it fails quickly if bad credentials passed')
     start = time.monotonic()
     with fapi.settings(**fab_settings), \
          fcm.cd(REMOTE_WORKSPACE), \
@@ -72,10 +79,12 @@ def execute_snapshot(remote, key_file, rc):
         fapi.run('chmod +x cc-snapshot')
 
         out = fapi.sudo('./cc-snapshot')
-
+    elapsed = time.monotonic() - start
+    assert elapsed < 5
     assert out.return_code != 0
     assert 'check username' in out
 
+    print('doing a real snapshot run...')
     with fapi.settings(**fab_settings), \
          fcm.cd(REMOTE_WORKSPACE), \
          fcm.shell_env(**remote_env):
@@ -89,6 +98,7 @@ def execute_snapshot(remote, key_file, rc):
     if out.return_code != 0:
         raise RuntimeError('snapshot returned non-zero!')
 
+    print('snapshot finished!')
     lines = out.splitlines()
     ilines = iter(lines)
     for line in ilines:
@@ -98,7 +108,7 @@ def execute_snapshot(remote, key_file, rc):
 
     image_info = {}
     for line in ilines:
-        if '------------' in line:
+        if '------------' in line: # end of table
             break
         try:
             key, value = parse_line(line)
@@ -110,6 +120,8 @@ def execute_snapshot(remote, key_file, rc):
 
     if not image_info:
         raise RuntimeError('could not parse image info!')
+
+    pprint(image_info)
 
     return image_info
 
@@ -127,19 +139,22 @@ def test_simple(lease, session, rc, key_file, key_name, image='CC-CentOS7'):
         image=image,
         net_ids=nets,
     )
+    print('instance started: {}'.format(instance))
     instance.wait()
     instance.associate_floating_ip()
     ssh = wait_for_ssh(instance.ip, key_file, verbose=True)
     ssh.close()
     # time.sleep(10) # give it another second, some problems sudo'ing
 
-    # push code there
+    print('copying local working directory to target')
     copy_repo_to_remote(instance.ip, key_file)
 
     # do it
+    print('running cc-snapshot')
     new_image = execute_snapshot(instance.ip, key_file, rc)
 
     # # see if the resulting image is any good
+    print('recreating instance with image')
     if False: # rebuild...I think this is broken because it doesn't trigger cloud-init correctly?
         instance.server.rebuild(new_image['id'])
         instance.wait()
@@ -154,18 +169,24 @@ def test_simple(lease, session, rc, key_file, key_name, image='CC-CentOS7'):
         instance.wait()
         instance.associate_floating_ip()
 
+    print('instance started (again): {}'.format(instance))
+
     ssh = wait_for_ssh(instance.ip, key_file, raise_error=False, verbose=True)
     # input('Press return to continue...')
     test_instance_working(instance.ip, key_file)
+
+    print('image {} successfully snapshot!'.format(image))
     # input('Press return to continue...')
+    instance.delete()
 
 
 def main():
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
-        '-i', '--image', type=str, default='CC-CentOS7',
-        help='Image (name or ID) to use',
+        '-i', '--image', action='append',
+        help='Image (name or ID) to use. Can be specified multiple times. '
+             'If none are provided, uses "CC-CentOS7"',
     )
     parser.add_argument(
         '--key-name', type=str, default='default',
@@ -189,6 +210,12 @@ def main():
 
     args = parser.parse_args()
 
+    images = args.image
+    if not images:
+        images = ['CC-CentOS7', 'CC-Ubuntu16.04']
+    if args.verbose:
+        print('testing images: {}'.format(images))
+
     key_file = args.key_file
     key_file = os.path.expanduser(key_file)
     if args.verbose:
@@ -205,7 +232,13 @@ def main():
     )
     print(now(), 'Lease: {}'.format(lease))
     with lease:
-        test_simple(lease, session, rc, key_file, args.key_name, image=args.image)
+        sleep = 0 # sleep between loops to let the instance get torn down
+        for image in args.image:
+            time.sleep(sleep)
+            sleep = 30
+            print('-'*80)
+            print('Starting test with image "{}"'.format(image))
+            test_simple(lease, session, rc, key_file, args.key_name, image=image)
 
 
 if __name__ == '__main__':

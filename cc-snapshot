@@ -6,7 +6,7 @@ set -o pipefail
 PARTITION_IMAGE=false
 
 print_usage() {
-  echo "usage: $0 [-p] [-e] folder_to_exclude snapshot_name"
+  echo "usage: $0 [-p] [-e folder_to_exclude] snapshot_name"
   echo "Optional arguments:"
   echo ""
   echo "  -h        Print this help message"
@@ -25,6 +25,7 @@ while getopts ":hp:e:" opt; do
       ;;
     e)
       EXCLUDE_FOLDERS+=("$OPTARG")
+      ;;
     \?)
       echo "Invalid option: -$OPTARG" >&2
       print_usage
@@ -46,10 +47,13 @@ fi
 
 echo "Will snapshot the instance using the following name: '$SNAPSHOT_NAME'"
 
-for folder in "${EXCLUDE_FOLDERS[@]}"; do
-    echo "Will exclude folder: $folder"
-    EXCLUDE_STRING+="--exclude $folder "
-done
+EXCLUDE_STRING=''
+if [ -n "${EXCLUDE_FOLDERS+x}" ]; then
+    for folder in "${EXCLUDE_FOLDERS[@]}"; do
+        echo "Will exclude folder: $folder"
+        EXCLUDE_STRING+="--exclude $folder "
+    done
+fi
 
 DISTRO=$(gawk -F= '/^NAME/{print $2}' /etc/os-release | tr -d \"\' | tr ' ' '-')
 UBUNTU='Ubuntu'
@@ -82,7 +86,7 @@ SITE=$(extract_json_key "site" "$JSON_VENDOR_DATA")
 
 if [ "$SITE" != "tacc" ] && [ "$SITE" != "uc" ]; then
   # The current instance  is apparently not a baremetal node.
-  echo "ERROR: Could not understand which site you are using, please  be sure that you run the script inside a baremetal instance!"
+  echo "Error: Could not detect which site you are using; cc-snapshot is only supported for baremetal instances."
   exit 1
 fi
 

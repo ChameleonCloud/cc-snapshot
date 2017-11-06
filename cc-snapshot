@@ -3,6 +3,11 @@
 set -eu
 set -o pipefail
 
+if [[ $EUID -ne 0 ]]; then
+   echo "This script must be run as root"
+   exit 1
+fi
+
 PARTITION_IMAGE=false
 
 print_usage() {
@@ -12,6 +17,8 @@ print_usage() {
   echo "  -h        Print this help message"
   echo "  -p        Create a partition image (separate kernel and ramdisk, no MBR)"
   echo "  -e        Exclude folder while snapshotting (can be used multiple times to exclude multiple folders)"
+  echo ""
+  echo " cc-snapshot version 0.2.0"
 }
 
 while getopts ":hp:e:" opt; do
@@ -97,13 +104,13 @@ export OS_TENANT_ID=$PROJECT_ID
 export OS_REGION_NAME="regionOne"
 if [ -z "$OS_REGION_NAME" ]; then unset OS_REGION_NAME; fi
 
-if [ -z "$OS_USERNAME" ]; then
+if [ -z "${OS_USERNAME+x}" ]; then
   echo "Please enter your Chameleon username: "
   read -r OS_USERNAME_INPUT
   export OS_USERNAME=$OS_USERNAME_INPUT
 fi
 
-if [ -z "$OS_PASSWORD" ]; then
+if [ -z "${OS_PASSWORD+x}" ]; then
   echo "Please enter your Chameleon password: "
   read -sr OS_PASSWORD_INPUT
   export OS_PASSWORD=$OS_PASSWORD_INPUT

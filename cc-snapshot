@@ -71,38 +71,40 @@ if [ $DISTRO = $UBUNTU ]; then
   UBUNTU_VERSION=$(lsb_release -c | awk '{print $2}')
 fi
 
-#########################################################
-# Generate openrc file that will be used to upload image
-#########################################################
-
-# The extract_json_key function is in charge of find a key in a flat JSON value.
-# Please note that if the JSON value is not flat, it should return the first value
-# associated to the given key.
-#    $1: String that represents the key
-#    $2: String that represents the JSON value
-#    return: the value of the key in the JSON value
-# example: extract_json_key 'foo' '{"foo": 1, "bar": 2}'
-
-function extract_json_key {
-  RESULT=$(echo "$2" | sed "s/.*$1\": \"//g" | sed 's/".*//g')
-  echo "$RESULT"
-}
-
+# Configure env for glance to upload image
 JSON_VENDOR_DATA=$(curl -s http://169.254.169.254/openstack/latest/vendor_data.json)
-SITE=$(extract_json_key "site" "$JSON_VENDOR_DATA")
+if hash jq 2>/dev/null; then
+  SITE=$(echo $JSON_VENDOR_DATA | jq -r .site)
+  REGION=$(echo $JSON_VENDOR_DATA | jq -r .region)
+  PROJECT_ID=$(echo $JSON_VENDOR_DATA | jq -r .project_id)
+else
+  # jq not available in default xenial repos
+  function extract_json_key {
+    RESULT=$(echo "$2" | sed "s/.*$1\": \"//g" | sed 's/".*//g')
+    echo "$RESULT"
+  }
+  SITE=$(extract_json_key "site" "$JSON_VENDOR_DATA")
+  REGION=$(extract_json_key "region" "$JSON_VENDOR_DATA")
+  PROJECT_ID=$(extract_json_key "project_id" "$JSON_VENDOR_DATA")
+fi
 
 if [ "$SITE" != "tacc" ] && [ "$SITE" != "uc" ]; then
-  # The current instance  is apparently not a baremetal node.
-  echo "Error: Could not detect which site you are using; cc-snapshot is only supported for baremetal instances."
+  # The current instance is apparently not a baremetal node.
+  echo "Error: Could not detect which site you are using (got \"$SITE\"); cc-snapshot is only supported for baremetal instances."
   exit 1
 fi
 
-PROJECT_ID=$(extract_json_key "project_id" "$JSON_VENDOR_DATA")
+export OS_REGION_NAME=$REGION
+if [ -z "$OS_REGION_NAME" ]; then unset OS_REGION_NAME; fi
 
+# if [ $KEYSTONE_VERSION = '2' ]; then
 export OS_AUTH_URL=https://chi.$SITE.chameleoncloud.org:5000/v2.0
 export OS_TENANT_ID=$PROJECT_ID
-export OS_REGION_NAME="regionOne"
-if [ -z "$OS_REGION_NAME" ]; then unset OS_REGION_NAME; fi
+# else #keystone v3 ...migrate to this at some point
+#export OS_AUTH_URL=https://chi.$SITE.chameleoncloud.org:5000/v3
+#export OS_PROJECT_ID=$PROJECT_ID
+#export OS_USER_DOMAIN_NAME="Default"
+# fi
 
 if [ -z "${OS_USERNAME+x}" ]; then
   echo "Please enter your Chameleon username: "
@@ -152,14 +154,14 @@ done
 
 if [ $DISTRO = $UBUNTU ]; then
   if [ $UBUNTU_VERSION = "xenial" ]; then
-    apt-get install -y libguestfs-tools
+    apt-get install -yq libguestfs-tools
   fi
 
   # Update guestfs appliances (prevent an error with virt-make-fs);
   # BUG: one package cannot be found (kpartx) and cause update-guestfs-appliance
   #      to exit with an error code;
-  apt-get -y update # APT repos may need an update in order to find kpartx
-  apt-get install -y kpartx
+  apt-get -yq update # APT repos may need an update in order to find kpartx
+  apt-get install -yq kpartx
   if [ "$(which update-guestfs-appliance)" != "" ]; then
     update-guestfs-appliance || true
   fi

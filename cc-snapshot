@@ -147,7 +147,14 @@ fi
 n=0
 until [ $n -ge 5 ]
 do
-  tar cf /tmp/snapshot.tar / --selinux --acls $TAR_ARGS --numeric-owner --one-file-system  --exclude=/tmp/snapshot.tar --exclude=/tmp/* --exclude=/proc/* --exclude=/var/tmp/* --exclude=/boot/extlinux $EXCLUDE_STRING && break
+  tar cf /tmp/snapshot.tar / --selinux --acls $TAR_ARGS --numeric-owner --one-file-system  \
+    --exclude=/tmp/snapshot.tar \
+    --exclude=/tmp/* \
+    --exclude=/proc/* \
+    --exclude=/var/tmp/* \
+    --exclude=/boot/extlinux \
+    --exclude=/var/lib/cloud \
+    $EXCLUDE_STRING && break
   n=$[$n+1]
   sleep 15
 done

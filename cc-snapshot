@@ -90,7 +90,8 @@ fi
 
 if [ "$SITE" != "tacc" ] && [ "$SITE" != "uc" ]; then
   # The current instance is apparently not a baremetal node.
-  echo "Error: Could not detect which site you are using (got \"$SITE\"); cc-snapshot is only supported for baremetal instances."
+  >&2 echo "Error: Could not detect which site you are using (got \"$SITE\")."
+  >&2 echo "cc-snapshot is only supported for baremetal instances."
   exit 1
 fi
 
@@ -119,7 +120,7 @@ if [ -z "${OS_PASSWORD+x}" ]; then
 fi
 
 set +e
-glance image-list --limit=1 >/dev/null #2>&1
+glance image-list >/dev/null #2>&1
 if [ ! $? -eq 0 ]; then
   echo Unable to contact Glance, check username and password
   exit 1
@@ -199,7 +200,8 @@ else
   VIRT_MAKE_FS="virt-make-fs"
 fi
 
-# This will take 3 to 5 minutes. Next, convert the tar file into a qcow2 image (if you don't want to use the XFS file system, you can replace xfs by ext4):
+# This will take 3 to 5 minutes. Next, convert the tar file into a qcow2 image
+# (if you don't want to use the XFS file system, you can replace xfs by ext4):
 $VIRT_MAKE_FS --format=qcow2 --type=$FS --label=$LABEL /tmp/snapshot.tar /tmp/snapshot.qcow2
 
 if [ "$PARTITION_IMAGE" == false ]; then
@@ -231,8 +233,15 @@ else
   echo "You asked for a partition image."
   echo "You will need to upload your kernel and ramdisk to Glance before uploading your image."
   echo "You may want to run 'source /tmp/openrc' to set your OpenStack credentials."
-  echo "After kernel and ramdisk are uploaded, run:"
-  echo "glance image-create --name $SNAPSHOT_NAME --disk-format qcow2 --container-format bare --property kernel_id=IMAGE_VMLINUZ_UUID --property ramdisk_id=IMAGE_INITRD_UUID < /tmp/snapshot_compressed.qcow2"
+  echo "After kernel and ramdisk are uploaded, run the below, filling in IMAGE_..._UUID:"
+  echo
+  echo "glance image-create \\"
+  echo "  --name $SNAPSHOT_NAME \\"
+  echo "  --disk-format qcow2 \\"
+  echo "  --container-format bare \\"
+  echo "  --property kernel_id=IMAGE_VMLINUZ_UUID \\"
+  echo "  --property ramdisk_id=IMAGE_INITRD_UUID \\"
+  echo "  < /tmp/snapshot_compressed.qcow2"
 fi
 
 exit 0

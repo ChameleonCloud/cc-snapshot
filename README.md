@@ -20,3 +20,14 @@ sudo cc-snapshot [snapshot_name]
 You can optionally specify a snapshot name. If no argument is present, the snapshot name is set to the instance hostname followed by a universally unique identifier.
 
 cc-snapshot will ask for your Chameleon password, and after a few minutes, a snapshot will be uploaded in the image repository of the instance's site (UC or TACC).
+
+## Troubleshooting
+
+**`virt-customize: error: libguestfs error: lvs: lvm lvs --help: Invalid units specification`**
+
+* Problem: the LVM2 package is incompatible with libguestfs (see https://bugzilla.redhat.com/show_bug.cgi?id=1475018)
+* Resolution: update the lvm2 package. On CentOS:
+    ```
+    sudo yum makecache
+    sudo yum update lvm2
+    ```

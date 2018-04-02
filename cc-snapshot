@@ -8,6 +8,29 @@ if [[ $EUID -ne 0 ]]; then
    exit 1
 fi
 
+# ===============================================================================
+## Properties
+# ===============================================================================
+## OpenStack Properties
+# ===============================================================================
+OPENSTACK_VENDOR_DATA='http://169.254.169.254/openstack/latest/vendor_data.json'
+# ===============================================================================
+## Chameleon Properties
+# ===============================================================================
+CHAMELEON_OS_AUTH_URL_TMPL='https://chi.SITE.chameleoncloud.org:5000/VERSION'
+# ===============================================================================
+## CC-Snapshot Properties
+# ===============================================================================
+# Snapshot disk format
+CC_SNAPSHOT_DISK_FORMAT=qcow2
+# Generated snapshot locations
+CC_SNAPSHOT_TAR_PATH=/tmp/snapshot.tar
+CC_SNAPSHOT_CONVERTED_PATH=/tmp/snapshot.qcow2
+CC_SNAPSHOT_CONVERTED_COMPRESSED_PATH=/tmp/snapshot_compressed.qcow2
+# Max snapshot tarball size (MB) for save upload
+CC_SNAPSHOT_MAX_TARBALL_SIZE=8000
+# ===============================================================================
+
 PARTITION_IMAGE=false
 
 print_usage() {
@@ -72,7 +95,7 @@ if [ $DISTRO = $UBUNTU ]; then
 fi
 
 # Configure env for glance to upload image
-JSON_VENDOR_DATA=$(curl -s http://169.254.169.254/openstack/latest/vendor_data.json)
+JSON_VENDOR_DATA=$(curl -s $OPENSTACK_VENDOR_DATA)
 if hash jq 2>/dev/null; then
   SITE=$(echo $JSON_VENDOR_DATA | jq -r .site)
   REGION=$(echo $JSON_VENDOR_DATA | jq -r .region)
@@ -99,10 +122,10 @@ export OS_REGION_NAME=$REGION
 if [ -z "$OS_REGION_NAME" ]; then unset OS_REGION_NAME; fi
 
 # if [ $KEYSTONE_VERSION = '2' ]; then
-export OS_AUTH_URL=https://chi.$SITE.chameleoncloud.org:5000/v2.0
+export OS_AUTH_URL=$(echo $CHAMELEON_OS_AUTH_URL_TMPL | sed "s/SITE/$SITE/g; s/VERSION/v2.0/g")
 export OS_TENANT_ID=$PROJECT_ID
 # else #keystone v3 ...migrate to this at some point
-#export OS_AUTH_URL=https://chi.$SITE.chameleoncloud.org:5000/v3
+#export OS_AUTH_URL=$(echo $CHAMELEON_OS_AUTH_URL_TMPL | sed "s/SITE/$SITE/g; s/VERSION/v3/g")
 #export OS_PROJECT_ID=$PROJECT_ID
 #export OS_USER_DOMAIN_NAME="Default"
 # fi
@@ -148,8 +171,8 @@ fi
 n=0
 until [ $n -ge 5 ]
 do
-  tar cf /tmp/snapshot.tar / --selinux --acls $TAR_ARGS --numeric-owner --one-file-system  \
-    --exclude=/tmp/snapshot.tar \
+  tar cf $CC_SNAPSHOT_TAR_PATH / --selinux --acls $TAR_ARGS --numeric-owner --one-file-system  \
+    --exclude=$CC_SNAPSHOT_TAR_PATH \
     --exclude=/tmp/* \
     --exclude=/proc/* \
     --exclude=/var/tmp/* \
@@ -160,6 +183,21 @@ do
   sleep 15
 done
 
+# Get the size of tar and warn user if exceeds threshold property
+SNAPSHOT_TAR_SIZE=$(($(stat -c %s $CC_SNAPSHOT_TAR_PATH) / 1024 / 1024 ))
+LARGE_TAR_CONTINUE='yes'
+if [ $SNAPSHOT_TAR_SIZE -gt $CC_SNAPSHOT_MAX_TARBALL_SIZE ]; then
+  echo 'WARNING: snapshot is too large! May cause issues.'
+  echo 'Do you want to continue? (yes/no)'
+  read -r LARGE_TAR_CONTINUE_INPUT
+  export LARGE_TAR_CONTINUE=$LARGE_TAR_CONTINUE_INPUT
+fi
+
+if [ ${LARGE_TAR_CONTINUE,,} != 'yes' ]; then
+  echo 'Aborting...'
+  exit 0
+fi
+  
 if [ $DISTRO = $UBUNTU ]; then
   if [ $UBUNTU_VERSION = "xenial" ]; then
     apt-get install -yq libguestfs-tools
@@ -202,25 +240,25 @@ fi
 
 # This will take 3 to 5 minutes. Next, convert the tar file into a qcow2 image
 # (if you don't want to use the XFS file system, you can replace xfs by ext4):
-$VIRT_MAKE_FS --format=qcow2 --type=$FS --label=$LABEL /tmp/snapshot.tar /tmp/snapshot.qcow2
+$VIRT_MAKE_FS --format=$CC_SNAPSHOT_DISK_FORMAT --type=$FS --label=$LABEL $CC_SNAPSHOT_TAR_PATH $CC_SNAPSHOT_CONVERTED_PATH
 
 if [ "$PARTITION_IMAGE" == false ]; then
   if [ $DISTRO = $CENTOS ]; then
     # and looking at the name of the file in that directory. Next ensure that the GRUB bootloader is present in the image:
-    virt-customize -a /tmp/snapshot.qcow2 --run-command 'grub2-install /dev/sda && grub2-mkconfig -o /boot/grub2/grub.cfg'
+    virt-customize -a $CC_SNAPSHOT_CONVERTED_PATH --run-command 'grub2-install /dev/sda && grub2-mkconfig -o /boot/grub2/grub.cfg'
   fi
 
   if [ $DISTRO = $UBUNTU ]; then
     # Next ensure that the GRUB bootloader is present in the image:
-    guestfish -a /tmp/snapshot.qcow2 -i sh 'grub-install /dev/sda && grub-mkconfig -o /boot/grub/grub.cfg'
+    guestfish -a $CC_SNAPSHOT_CONVERTED_PATH -i sh 'grub-install /dev/sda && grub-mkconfig -o /boot/grub/grub.cfg'
   fi
 fi
 
 # To remove unwanted configuration information from your image, run:
-virt-sysprep -a /tmp/snapshot.qcow2
+virt-sysprep -a $CC_SNAPSHOT_CONVERTED_PATH
 
 # To complete the preparation of your snapshot image, create a compressed version of it:
-qemu-img convert /tmp/snapshot.qcow2 -O qcow2 /tmp/snapshot_compressed.qcow2 -c
+qemu-img convert $CC_SNAPSHOT_CONVERTED_PATH -O $CC_SNAPSHOT_DISK_FORMAT $CC_SNAPSHOT_CONVERTED_COMPRESSED_PATH -c
 
 ################################
 # Upload the Snapshot on Glance
@@ -228,7 +266,7 @@ qemu-img convert /tmp/snapshot.qcow2 -O qcow2 /tmp/snapshot_compressed.qcow2 -c
 
 # The final steps are to upload your snapshot image to OpenStack Glance.
 if [ "$PARTITION_IMAGE" == false ]; then
-  glance image-create --name $SNAPSHOT_NAME --disk-format qcow2 --container-format bare < /tmp/snapshot_compressed.qcow2
+  glance image-create --name $SNAPSHOT_NAME --disk-format $CC_SNAPSHOT_DISK_FORMAT --container-format bare < $CC_SNAPSHOT_CONVERTED_COMPRESSED_PATH
 else
   echo "You asked for a partition image."
   echo "You will need to upload your kernel and ramdisk to Glance before uploading your image."
@@ -237,11 +275,11 @@ else
   echo
   echo "glance image-create \\"
   echo "  --name $SNAPSHOT_NAME \\"
-  echo "  --disk-format qcow2 \\"
+  echo "  --disk-format $CC_SNAPSHOT_DISK_FORMAT \\"
   echo "  --container-format bare \\"
   echo "  --property kernel_id=IMAGE_VMLINUZ_UUID \\"
   echo "  --property ramdisk_id=IMAGE_INITRD_UUID \\"
-  echo "  < /tmp/snapshot_compressed.qcow2"
+  echo "  < $SNAPSHOT_QCOW2_COMPRESSED_PATH"
 fi
 
 exit 0

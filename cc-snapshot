@@ -32,6 +32,7 @@ CC_SNAPSHOT_MAX_TARBALL_SIZE=8000
 # ===============================================================================
 
 PARTITION_IMAGE=false
+IGNORE_WARNING=false
 
 print_usage() {
   echo "usage: $0 [-p] [-e folder_to_exclude] snapshot_name"
@@ -40,11 +41,12 @@ print_usage() {
   echo "  -h        Print this help message"
   echo "  -p        Create a partition image (separate kernel and ramdisk, no MBR)"
   echo "  -e        Exclude folder while snapshotting (can be used multiple times to exclude multiple folders)"
+  echo "  -f        Ignore all warnings"
   echo ""
   echo " cc-snapshot version 0.2.0"
 }
 
-while getopts ":hp:e:" opt; do
+while getopts ":hp:e:f" opt; do
   case $opt in
     h)
       print_usage
@@ -55,6 +57,9 @@ while getopts ":hp:e:" opt; do
       ;;
     e)
       EXCLUDE_FOLDERS+=("$OPTARG")
+      ;;
+    f)
+      IGNORE_WARNING=true
       ;;
     \?)
       echo "Invalid option: -$OPTARG" >&2
@@ -186,7 +191,7 @@ done
 # Get the size of tar and warn user if exceeds threshold property
 SNAPSHOT_TAR_SIZE=$(($(stat -c %s $CC_SNAPSHOT_TAR_PATH) / 1024 / 1024 ))
 LARGE_TAR_CONTINUE='yes'
-if [ $SNAPSHOT_TAR_SIZE -gt $CC_SNAPSHOT_MAX_TARBALL_SIZE ]; then
+if [ $SNAPSHOT_TAR_SIZE -gt $CC_SNAPSHOT_MAX_TARBALL_SIZE ] && [ "$IGNORE_WARNING" == false ]; then
   echo 'WARNING: snapshot is too large! May cause issues.'
   echo 'Do you want to continue? (yes/no)'
   read -r LARGE_TAR_CONTINUE_INPUT

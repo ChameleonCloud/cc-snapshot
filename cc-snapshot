@@ -202,7 +202,7 @@ if [ ${LARGE_TAR_CONTINUE,,} != 'yes' ]; then
   echo 'Aborting...'
   exit 0
 fi
-  
+
 if [ $DISTRO = $UBUNTU ]; then
   if [ $UBUNTU_VERSION = "xenial" ]; then
     apt-get install -yq libguestfs-tools
@@ -218,7 +218,17 @@ if [ $DISTRO = $UBUNTU ]; then
   fi
 
   FS="ext4"
-  LABEL=`ls /dev/disk/by-label`
+
+  [[ -n "$LABEL" ]] || {
+    LABEL="$(ls -1 /dev/disk/by-label)"
+    if [[ "$(wc -l <<<"$LABEL")" != "1" ]]; then
+      >&2 echo "Unable to auto-detect disk label: found >1 labeled disks:"
+      >&2 echo "$(sed 's/\n/ - /g' <<<"$LABEL")"
+      >&2 echo "Please try again while explicitly setting the LABEL"
+      >&2 echo "env variable to the desired disk label."
+      exit 1
+    fi
+  }
 fi
 
 if [ $DISTRO = $CENTOS ]; then
@@ -245,7 +255,11 @@ fi
 
 # This will take 3 to 5 minutes. Next, convert the tar file into a qcow2 image
 # (if you don't want to use the XFS file system, you can replace xfs by ext4):
-$VIRT_MAKE_FS --format=$CC_SNAPSHOT_DISK_FORMAT --type=$FS --label=$LABEL $CC_SNAPSHOT_TAR_PATH $CC_SNAPSHOT_CONVERTED_PATH
+$VIRT_MAKE_FS --format="$CC_SNAPSHOT_DISK_FORMAT" \
+  --type="$FS" \
+  --label="$LABEL" \
+  "$CC_SNAPSHOT_TAR_PATH" \
+  "$CC_SNAPSHOT_CONVERTED_PATH"
 
 if [ "$PARTITION_IMAGE" == false ]; then
   if [ $DISTRO = $CENTOS ]; then

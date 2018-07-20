@@ -227,12 +227,15 @@ if [ $DISTRO = $CENTOS ]; then
 fi
 
 ARCH=`uname -i`
-if [ "$ARCH" == "aarch64" ]; then
-  # The libguestfs appliance is not compatible with uboot kernels.
-  # We assume that there is a kernel available at /boot/vmlinuz-libguestfs
-  export SUPERMIN_KERNEL=/boot/vmlinuz-libguestfs
-  export SUPERMIN_KERNEL_VERSION=`readlink /boot/vmlinuz | sed 's/vmlinuz-\(.*\)/\1/'`
-fi
+# The following is not necessary if the U-Boot kernel and ramdisk are installed at
+# /boot/uImage and /boot/uInitrd, allowing the generic kernel to reside in the
+# expected place.
+#if [ "$ARCH" == "aarch64" ]; then
+#  # The libguestfs appliance is not compatible with uboot kernels.
+#  # We assume that there is a kernel available at /boot/vmlinuz-libguestfs
+#  export SUPERMIN_KERNEL=/boot/vmlinuz-libguestfs
+#  export SUPERMIN_KERNEL_VERSION=`readlink /boot/vmlinuz | sed 's/vmlinuz-\(.*\)/\1/'`
+#fi
 
 # Confusingly, virt-make-fs uses the --partition flag to request adding an MBR
 # to the image, while what we (and Ironic) call partition images are images
@@ -247,7 +250,8 @@ fi
 # (if you don't want to use the XFS file system, you can replace xfs by ext4):
 $VIRT_MAKE_FS --format=$CC_SNAPSHOT_DISK_FORMAT --type=$FS --label=$LABEL $CC_SNAPSHOT_TAR_PATH $CC_SNAPSHOT_CONVERTED_PATH
 
-if [ "$PARTITION_IMAGE" == false ]; then
+# Our ARM64 images use U-Boot, so don't install GRUB
+if [ "$PARTITION_IMAGE" == false ] && [ "$ARCH" != "aarch64" ]; then
   if [ $DISTRO = $CENTOS ]; then
     # and looking at the name of the file in that directory. Next ensure that the GRUB bootloader is present in the image:
     virt-customize -a $CC_SNAPSHOT_CONVERTED_PATH --run-command 'grub2-install /dev/sda && grub2-mkconfig -o /boot/grub2/grub.cfg'

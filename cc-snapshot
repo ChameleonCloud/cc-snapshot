@@ -219,7 +219,7 @@ if [ $DISTRO = $UBUNTU ]; then
 
   FS="ext4"
 
-  [[ -n "$LABEL" ]] || {
+  [[ -n ${LABEL:-} ]] || {
     LABEL="$(ls -1 /dev/disk/by-label)"
     if [[ "$(wc -l <<<"$LABEL")" != "1" ]]; then
       >&2 echo "Unable to auto-detect disk label: found >1 labeled disks:"

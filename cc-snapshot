@@ -1,8 +1,5 @@
 #!/bin/bash
 
-set -eu
-set -o pipefail
-
 if [[ $EUID -ne 0 ]]; then
    echo "This script must be run as root"
    exit 1
@@ -68,6 +65,40 @@ while getopts ":hp:e:f" opt; do
       ;;
   esac
 done
+
+###### Update section ######
+
+#Download latest version, assign versions to variables, curlstat variable ensures update only executes if curl succeeds.
+#------------------------------------------------
+SCRIPT=$0
+curl -s -o /tmp/tmp-snap https://raw.githubusercontent.com/ChameleonCloud/cc-snapshot/master/cc-snapshot
+CURLSTAT=$?
+NEWSCRIPT='/tmp/tmp-snap'
+
+#Compare files and update if cc-snapshot outdated
+#------------------------------------------------
+diff -q "$SCRIPT" "$NEWSCRIPT" &>/dev/null
+DIFF=$?
+if [ $DIFF -eq 1 ] && [ $CURLSTAT -eq 0 ];
+then
+        echo 'Your cc-snapshot is not up to date.'
+	if [ $IGNORE_WARNING == false ]; 
+	then
+        	read -ep 'Update now? [y/n]'
+        	if [[ $REPLY =~ ^[Yy]$ ]];
+        	then
+                	mv --backup=t "$SCRIPT" "$SCRIPT'-old'"
+                	mv "$NEWSCRIPT" "$SCRIPT"
+                	chmod +x "$SCRIPT"
+			exec "$SCRIPT" "$@"
+		fi
+        fi
+fi
+
+###### Update section end ######
+
+set -eu
+set -o pipefail
 
 shift $((OPTIND-1))
 

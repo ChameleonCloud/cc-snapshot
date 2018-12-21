@@ -14,7 +14,7 @@ OPENSTACK_VENDOR_DATA='http://169.254.169.254/openstack/latest/vendor_data.json'
 # ===============================================================================
 ## Chameleon Properties
 # ===============================================================================
-CHAMELEON_OS_AUTH_URL_TMPL='https://chi.SITE.chameleoncloud.org:5000/VERSION'
+CHAMELEON_OS_AUTH_URL_TMPL='https://sl-SITE.northwestern.edu:5000/VERSION'
 # ===============================================================================
 ## CC-Snapshot Properties
 # ===============================================================================
@@ -147,7 +147,7 @@ else
   PROJECT_ID=$(extract_json_key "project_id" "$JSON_VENDOR_DATA")
 fi
 
-if [ "$SITE" != "tacc" ] && [ "$SITE" != "uc" ]; then
+if [ "$SITE" != "tacc" ] && [ "$SITE" != "uc" ] && [ "$SITE" != "ciab" ]; then
   # The current instance is apparently not a baremetal node.
   >&2 echo "Error: Could not detect which site you are using (got \"$SITE\")."
   >&2 echo "cc-snapshot is only supported for baremetal instances."

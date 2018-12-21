@@ -71,7 +71,7 @@ done
 #Download latest version, assign versions to variables, curlstat variable ensures update only executes if curl succeeds.
 #------------------------------------------------
 SCRIPT=$0
-curl -s -o /tmp/tmp-snap https://raw.githubusercontent.com/ChameleonCloud/cc-snapshot/master/cc-snapshot
+curl -s -o /tmp/tmp-snap https://raw.githubusercontent.com/buck5060/cc-snapshot/master/cc-snapshot
 CURLSTAT=$?
 NEWSCRIPT='/tmp/tmp-snap'
 

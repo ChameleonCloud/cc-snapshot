@@ -80,20 +80,17 @@ NEWSCRIPT='/tmp/tmp-snap'
 #------------------------------------------------
 diff -q "$SCRIPT" "$NEWSCRIPT" &>/dev/null
 DIFF=$?
-if [ $DIFF -eq 1 ] && [ $CURLSTAT -eq 0 ];
-then
-        echo 'Your cc-snapshot is not up to date.'
-	if [ $IGNORE_WARNING == false ];
-	then
-        	read -ep 'Update now? [y/n]'
-        	if [[ $REPLY =~ ^[Yy]$ ]];
-        	then
-                	mv --backup=t "$SCRIPT" "$SCRIPT'-old'"
-                	mv "$NEWSCRIPT" "$SCRIPT"
-                	chmod +x "$SCRIPT"
-			exec "$SCRIPT" "$@"
+if [ $DIFF -eq 1 ] && [ $CURLSTAT -eq 0 ]; then
+  echo 'Your cc-snapshot is not up to date.'
+	if [ $IGNORE_WARNING == false ]; then
+  	read -ep 'Update now? [y/n]'
+  	if [[ $REPLY =~ ^[Yy]$ ]]; then
+    	mv --backup=t "$SCRIPT" "$SCRIPT'-old'"
+    	mv "$NEWSCRIPT" "$SCRIPT"
+    	chmod +x "$SCRIPT"
+  	  exec "$SCRIPT" "$@"
 		fi
-        fi
+  fi
 fi
 
 ###### Update section end ######

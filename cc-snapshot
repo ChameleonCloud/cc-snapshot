@@ -113,14 +113,29 @@ else
 fi
 
 echo "Will snapshot the instance using the following name: '$SNAPSHOT_NAME'"
-
-EXCLUDE_STRING=''
 if [ -n "${EXCLUDE_FOLDERS+x}" ]; then
-    for folder in "${EXCLUDE_FOLDERS[@]}"; do
-        echo "Will exclude folder: $folder"
-        EXCLUDE_STRING+="--exclude $folder "
-    done
+  for folder in "${EXCLUDE_FOLDERS[@]}"; do
+    echo "Will exclude folder: $folder"
+  done
 fi
+
+EXCLUDE_FROM="$(mktemp)"
+cat >$EXCLUDE_FROM <<EOF
+# User excludes
+${EXCLUDE_FOLDERS[@]:-}
+# Temp
+/tmp/*
+/var/tmp/*
+# Instance-specific
+/proc/*
+/boot/extlinux
+/var/lib/cloud
+# Sockets
+/var/lib/gssproxy/*.sock
+/var/spool/postfix
+# Swift cloudfuse mount
+/home/cc/my_mounting_point
+EOF
 
 DISTRO=$(gawk -F= '/^NAME/{print $2}' /etc/os-release | tr -d \"\' | tr ' ' '-')
 UBUNTU='Ubuntu'
@@ -203,24 +218,16 @@ if [ $DISTRO = $CENTOS ]; then
 fi
 
 # Create a tar file of the contents of your instance:
-if [ "$UBUNTU_VERSION"=="xenial" ]; then
-  TAR_ARGS=""
-else
-  TAR_ARGS="--xattrs"
+declare -a TAR_ARGS=(--selinux --acls --numeric-owner --one-file-system --exclude-from $EXCLUDE_FROM)
+if [ "$UBUNTU_VERSION" != "xenial" ]; then
+  TAR_ARGS+=(--xattrs)
 fi
 
 # The following code is inspired from http://unix.stackexchange.com/questions/82598
 n=0
 until [ $n -ge 5 ]
 do
-  tar cf $CC_SNAPSHOT_TAR_PATH / --selinux --acls $TAR_ARGS --numeric-owner --one-file-system  \
-    --exclude=$CC_SNAPSHOT_TAR_PATH \
-    --exclude=/tmp/* \
-    --exclude=/proc/* \
-    --exclude=/var/tmp/* \
-    --exclude=/boot/extlinux \
-    --exclude=/var/lib/cloud \
-    $EXCLUDE_STRING && break
+  tar cf $CC_SNAPSHOT_TAR_PATH / ${TAR_ARGS[@]} && break
   n=$[$n+1]
   sleep 15
 done

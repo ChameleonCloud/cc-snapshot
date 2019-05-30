@@ -31,6 +31,7 @@ CC_SNAPSHOT_MAX_TARBALL_SIZE=8000
 
 PARTITION_IMAGE=false
 IGNORE_WARNING=false
+FORCE_YES=false
 
 print_usage() {
   echo "usage: $0 [-p] [-e folder_to_exclude] snapshot_name"
@@ -40,11 +41,12 @@ print_usage() {
   echo "  -p        Create a partition image (separate kernel and ramdisk, no MBR)"
   echo "  -e        Exclude folder while snapshotting (can be used multiple times to exclude multiple folders)"
   echo "  -f        Ignore all warnings"
+  echo "  -y        Answer 'yes' to all prompts"
   echo ""
   echo " cc-snapshot version 0.2.0"
 }
 
-while getopts ":hp:e:f" opt; do
+while getopts ":hp:e:f:y" opt; do
   case $opt in
     h)
       print_usage
@@ -58,6 +60,9 @@ while getopts ":hp:e:f" opt; do
       ;;
     f)
       IGNORE_WARNING=true
+      ;;
+    y)
+      FORCE_YES=true
       ;;
     \?)
       echo "Invalid option: -$OPTARG" >&2
@@ -82,14 +87,19 @@ diff -q "$SCRIPT" "$NEWSCRIPT" &>/dev/null
 DIFF=$?
 if [ $DIFF -eq 1 ] && [ $CURLSTAT -eq 0 ]; then
   echo 'Your cc-snapshot is not up to date.'
-	if [ $IGNORE_WARNING == false ]; then
-  	read -ep 'Update now? [y/n]'
+  if [ $IGNORE_WARNING == false ]; then
+  	if [ $FORCE_YES == false ]; then
+      read -ep 'Update now? [y/n]'
+    else
+      REPLY=y
+    fi
+
   	if [[ $REPLY =~ ^[Yy]$ ]]; then
     	mv --backup=t "$SCRIPT" "$SCRIPT'-old'"
     	mv "$NEWSCRIPT" "$SCRIPT"
     	chmod +x "$SCRIPT"
   	  exec "$SCRIPT" "$@"
-		fi
+    fi
   fi
 fi
 
@@ -185,22 +195,25 @@ if [ -z "$OS_REGION_NAME" ]; then unset OS_REGION_NAME; fi
 
 export OS_AUTH_URL=$(echo $CHAMELEON_OS_AUTH_URL_TMPL | sed "s/SITE/$SITE/g")
 export OS_PROJECT_ID=$PROJECT_ID
-export OS_USER_DOMAIN_NAME="Default"
 
-if [ -z "${OS_USERNAME+x}" ]; then
-  echo "Please enter your Chameleon username: "
-  read -r OS_USERNAME_INPUT
-  export OS_USERNAME=$OS_USERNAME_INPUT
-fi
+if [ -z "${OS_TOKEN+x}" ]; then
+  if [ -z "${OS_USERNAME+x}" ]; then
+    echo "Please enter your Chameleon username: "
+    read -r OS_USERNAME_INPUT
+    export OS_USERNAME=$OS_USERNAME_INPUT
+  fi
 
-if [ -z "${OS_PASSWORD+x}" ]; then
-  echo "Please enter your Chameleon password: "
-  read -sr OS_PASSWORD_INPUT
-  export OS_PASSWORD=$OS_PASSWORD_INPUT
+  if [ -z "${OS_PASSWORD+x}" ]; then
+    echo "Please enter your Chameleon password: "
+    read -sr OS_PASSWORD_INPUT
+    export OS_PASSWORD=$OS_PASSWORD_INPUT
+  fi
+
+  export OS_USER_DOMAIN_NAME="Default"
 fi
 
 set +e
-glance image-list >/dev/null #2>&1
+openstack image list >/dev/null #2>&1
 if [ ! $? -eq 0 ]; then
   echo Unable to contact Glance, check username and password
   exit 1
@@ -333,20 +346,22 @@ qemu-img convert $CC_SNAPSHOT_CONVERTED_PATH -O $CC_SNAPSHOT_DISK_FORMAT $CC_SNA
 
 # The final steps are to upload your snapshot image to OpenStack Glance.
 if [ "$PARTITION_IMAGE" == false ]; then
-  glance image-create --name $SNAPSHOT_NAME --disk-format $CC_SNAPSHOT_DISK_FORMAT --container-format bare < $CC_SNAPSHOT_CONVERTED_COMPRESSED_PATH
+  openstack image create \
+    --disk-format $CC_SNAPSHOT_DISK_FORMAT \
+    --container-format bare \
+    $SNAPSHOT_NAME <$CC_SNAPSHOT_CONVERTED_COMPRESSED_PATH
 else
   echo "You asked for a partition image."
   echo "You will need to upload your kernel and ramdisk to Glance before uploading your image."
   echo "You may want to run 'source /tmp/openrc' to set your OpenStack credentials."
   echo "After kernel and ramdisk are uploaded, run the below, filling in IMAGE_..._UUID:"
   echo
-  echo "glance image-create \\"
-  echo "  --name $SNAPSHOT_NAME \\"
+  echo "openstack image create \\"
   echo "  --disk-format $CC_SNAPSHOT_DISK_FORMAT \\"
   echo "  --container-format bare \\"
   echo "  --property kernel_id=IMAGE_VMLINUZ_UUID \\"
   echo "  --property ramdisk_id=IMAGE_INITRD_UUID \\"
-  echo "  < $SNAPSHOT_QCOW2_COMPRESSED_PATH"
+  echo "  $SNAPSHOT_NAME <$SNAPSHOT_QCOW2_COMPRESSED_PATH"
 fi
 
 exit 0

@@ -194,6 +194,7 @@ export OS_REGION_NAME=$REGION
 if [ -z "$OS_REGION_NAME" ]; then unset OS_REGION_NAME; fi
 
 export OS_AUTH_URL=$(echo $CHAMELEON_OS_AUTH_URL_TMPL | sed "s/SITE/$SITE/g")
+export OS_IDENTITY_API_VERSION=3
 export OS_PROJECT_ID=$PROJECT_ID
 
 if [ -z "${OS_TOKEN+x}" ]; then

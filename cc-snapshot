@@ -11,10 +11,11 @@ fi
 ## OpenStack Properties
 # ===============================================================================
 OPENSTACK_VENDOR_DATA='http://169.254.169.254/openstack/latest/vendor_data.json'
+OPENSTACK_VENDOR_DATA_2='http://169.254.169.254/openstack/latest/vendor_data2.json'
 # ===============================================================================
 ## Chameleon Properties
 # ===============================================================================
-CHAMELEON_OS_AUTH_URL_TMPL='https://sl-SITE.northwestern.edu:5000/VERSION'
+CHAMELEON_OS_AUTH_URL_TMPL='https://sl-ciab.northwestern.edu:5000'
 # ===============================================================================
 ## CC-Snapshot Properties
 # ===============================================================================
@@ -30,6 +31,7 @@ CC_SNAPSHOT_MAX_TARBALL_SIZE=8000
 
 PARTITION_IMAGE=false
 IGNORE_WARNING=false
+FORCE_YES=false
 
 print_usage() {
   echo "usage: $0 [-p] [-e folder_to_exclude] snapshot_name"
@@ -39,11 +41,12 @@ print_usage() {
   echo "  -p        Create a partition image (separate kernel and ramdisk, no MBR)"
   echo "  -e        Exclude folder while snapshotting (can be used multiple times to exclude multiple folders)"
   echo "  -f        Ignore all warnings"
+  echo "  -y        Answer 'yes' to all prompts"
   echo ""
   echo " cc-snapshot version 0.2.0"
 }
 
-while getopts ":hp:e:f" opt; do
+while getopts ":hp:e:f:y" opt; do
   case $opt in
     h)
       print_usage
@@ -57,6 +60,9 @@ while getopts ":hp:e:f" opt; do
       ;;
     f)
       IGNORE_WARNING=true
+      ;;
+    y)
+      FORCE_YES=true
       ;;
     \?)
       echo "Invalid option: -$OPTARG" >&2
@@ -79,23 +85,36 @@ NEWSCRIPT='/tmp/tmp-snap'
 #------------------------------------------------
 diff -q "$SCRIPT" "$NEWSCRIPT" &>/dev/null
 DIFF=$?
-if [ $DIFF -eq 1 ] && [ $CURLSTAT -eq 0 ];
-then
-        echo 'Your cc-snapshot is not up to date.'
-	if [ $IGNORE_WARNING == false ]; 
-	then
-        	read -ep 'Update now? [y/n]'
-        	if [[ $REPLY =~ ^[Yy]$ ]];
-        	then
-                	mv --backup=t "$SCRIPT" "$SCRIPT'-old'"
-                	mv "$NEWSCRIPT" "$SCRIPT"
-                	chmod +x "$SCRIPT"
-			exec "$SCRIPT" "$@"
-		fi
-        fi
+if [ $DIFF -eq 1 ] && [ $CURLSTAT -eq 0 ]; then
+  echo 'Your cc-snapshot is not up to date.'
+  if [ $IGNORE_WARNING == false ]; then
+  	if [ $FORCE_YES == false ]; then
+      read -ep 'Update now? [y/n]'
+    else
+      REPLY=y
+    fi
+
+  	if [[ $REPLY =~ ^[Yy]$ ]]; then
+    	mv --backup=t "$SCRIPT" "$SCRIPT'-old'"
+    	mv "$NEWSCRIPT" "$SCRIPT"
+    	chmod +x "$SCRIPT"
+  	  exec "$SCRIPT" "$@"
+    fi
+  fi
 fi
 
 ###### Update section end ######
+
+###### Check openstackclient version ######
+## each separate version number must be less than 3 digit wide !
+function version { echo "$@" | gawk -F. '{ printf("%03d%03d%03d\n", $1,$2,$3); }'; }
+
+openstackclient_version=$(echo $(pip --disable-pip-version-check freeze | grep python-openstackclient) | awk -F"==" '{ print $2}')
+if [ "$(version "$openstackclient_version")" -lt "$(version "3.18.0")" ]; then
+  echo "The openstack client version is too old; please run 'sudo pip install python-openstackclient --upgrade' to update"
+  exit 1
+fi
+###### Check openstackclient version end ######
 
 set -eu
 set -o pipefail
@@ -112,14 +131,32 @@ else
 fi
 
 echo "Will snapshot the instance using the following name: '$SNAPSHOT_NAME'"
-
-EXCLUDE_STRING=''
 if [ -n "${EXCLUDE_FOLDERS+x}" ]; then
-    for folder in "${EXCLUDE_FOLDERS[@]}"; do
-        echo "Will exclude folder: $folder"
-        EXCLUDE_STRING+="--exclude $folder "
-    done
+  for folder in "${EXCLUDE_FOLDERS[@]}"; do
+    echo "Will exclude folder: $folder"
+  done
 fi
+
+# Tar can read a file that contains a list of newline-separated file patterns
+# for exclusion. Empty lines are OK. Commented lines technically are interpreted
+# as a file, but they shouldn't match anything.
+EXCLUDE_FROM="$(mktemp)"
+cat >$EXCLUDE_FROM <<EOF
+# Temp
+/tmp/*
+/var/tmp/*
+# Instance-specific
+/proc/*
+/boot/extlinux
+/var/lib/cloud
+# Sockets
+/var/lib/gssproxy/*.sock
+/var/spool/postfix
+# Swift cloudfuse mount
+/home/cc/my_mounting_point
+# User excludes
+$(printf "%s\n" "${EXCLUDE_FOLDERS[@]:-}")
+EOF
 
 DISTRO=$(gawk -F= '/^NAME/{print $2}' /etc/os-release | tr -d \"\' | tr ' ' '-')
 UBUNTU='Ubuntu'
@@ -131,8 +168,18 @@ if [ $DISTRO = $UBUNTU ]; then
 fi
 
 # Configure env for glance to upload image
-JSON_VENDOR_DATA=$(curl -s $OPENSTACK_VENDOR_DATA)
+# try vendordata2.json first and fallback to vendordata.json if empty
+JSON_VENDOR_DATA=$(curl -s $OPENSTACK_VENDOR_DATA_2)
+NEW_VENDOR_DATA=true
+if [ "$JSON_VENDOR_DATA" = '{}' ]; then
+  JSON_VENDOR_DATA=$(curl -s $OPENSTACK_VENDOR_DATA)
+  NEW_VENDOR_DATA=false
+fi
+
 if hash jq 2>/dev/null; then
+  if $NEW_VENDOR_DATA; then
+    JSON_VENDOR_DATA=$(echo $JSON_VENDOR_DATA | jq -r .chameleon)
+  fi
   SITE=$(echo $JSON_VENDOR_DATA | jq -r .site)
   REGION=$(echo $JSON_VENDOR_DATA | jq -r .region)
   PROJECT_ID=$(echo $JSON_VENDOR_DATA | jq -r .project_id)
@@ -157,29 +204,28 @@ fi
 export OS_REGION_NAME=$REGION
 if [ -z "$OS_REGION_NAME" ]; then unset OS_REGION_NAME; fi
 
-# if [ $KEYSTONE_VERSION = '2' ]; then
-export OS_AUTH_URL=$(echo $CHAMELEON_OS_AUTH_URL_TMPL | sed "s/SITE/$SITE/g; s/VERSION/v2.0/g")
-export OS_TENANT_ID=$PROJECT_ID
-# else #keystone v3 ...migrate to this at some point
-#export OS_AUTH_URL=$(echo $CHAMELEON_OS_AUTH_URL_TMPL | sed "s/SITE/$SITE/g; s/VERSION/v3/g")
-#export OS_PROJECT_ID=$PROJECT_ID
-#export OS_USER_DOMAIN_NAME="Default"
-# fi
+export OS_AUTH_URL=$(echo $CHAMELEON_OS_AUTH_URL_TMPL | sed "s/SITE/$SITE/g")
+export OS_IDENTITY_API_VERSION=3
+export OS_PROJECT_ID=$PROJECT_ID
 
-if [ -z "${OS_USERNAME+x}" ]; then
-  echo "Please enter your Chameleon username: "
-  read -r OS_USERNAME_INPUT
-  export OS_USERNAME=$OS_USERNAME_INPUT
-fi
+if [ -z "${OS_TOKEN+x}" ]; then
+  if [ -z "${OS_USERNAME+x}" ]; then
+    echo "Please enter your Chameleon username: "
+    read -r OS_USERNAME_INPUT
+    export OS_USERNAME=$OS_USERNAME_INPUT
+  fi
 
-if [ -z "${OS_PASSWORD+x}" ]; then
-  echo "Please enter your Chameleon password: "
-  read -sr OS_PASSWORD_INPUT
-  export OS_PASSWORD=$OS_PASSWORD_INPUT
+  if [ -z "${OS_PASSWORD+x}" ]; then
+    echo "Please enter your Chameleon password: "
+    read -sr OS_PASSWORD_INPUT
+    export OS_PASSWORD=$OS_PASSWORD_INPUT
+  fi
+
+  export OS_USER_DOMAIN_NAME="Default"
 fi
 
 set +e
-glance image-list >/dev/null #2>&1
+openstack image list >/dev/null #2>&1
 if [ ! $? -eq 0 ]; then
   echo Unable to contact Glance, check username and password
   exit 1
@@ -197,24 +243,16 @@ if [ $DISTRO = $CENTOS ]; then
 fi
 
 # Create a tar file of the contents of your instance:
-if [ "$UBUNTU_VERSION"=="xenial" ]; then
-  TAR_ARGS=""
-else
-  TAR_ARGS="--xattrs"
+declare -a TAR_ARGS=(--selinux --acls --numeric-owner --one-file-system --exclude-from $EXCLUDE_FROM)
+if [ "$UBUNTU_VERSION" != "xenial" ]; then
+  TAR_ARGS+=(--xattrs)
 fi
 
 # The following code is inspired from http://unix.stackexchange.com/questions/82598
 n=0
 until [ $n -ge 5 ]
 do
-  tar cf $CC_SNAPSHOT_TAR_PATH / --selinux --acls $TAR_ARGS --numeric-owner --one-file-system  \
-    --exclude=$CC_SNAPSHOT_TAR_PATH \
-    --exclude=/tmp/* \
-    --exclude=/proc/* \
-    --exclude=/var/tmp/* \
-    --exclude=/boot/extlinux \
-    --exclude=/var/lib/cloud \
-    $EXCLUDE_STRING && break
+  tar cf $CC_SNAPSHOT_TAR_PATH / ${TAR_ARGS[@]} && break
   n=$[$n+1]
   sleep 15
 done
@@ -320,20 +358,22 @@ qemu-img convert $CC_SNAPSHOT_CONVERTED_PATH -O $CC_SNAPSHOT_DISK_FORMAT $CC_SNA
 
 # The final steps are to upload your snapshot image to OpenStack Glance.
 if [ "$PARTITION_IMAGE" == false ]; then
-  glance image-create --name $SNAPSHOT_NAME --disk-format $CC_SNAPSHOT_DISK_FORMAT --container-format bare < $CC_SNAPSHOT_CONVERTED_COMPRESSED_PATH
+  openstack image create \
+    --disk-format $CC_SNAPSHOT_DISK_FORMAT \
+    --container-format bare \
+    $SNAPSHOT_NAME <$CC_SNAPSHOT_CONVERTED_COMPRESSED_PATH
 else
   echo "You asked for a partition image."
   echo "You will need to upload your kernel and ramdisk to Glance before uploading your image."
   echo "You may want to run 'source /tmp/openrc' to set your OpenStack credentials."
   echo "After kernel and ramdisk are uploaded, run the below, filling in IMAGE_..._UUID:"
   echo
-  echo "glance image-create \\"
-  echo "  --name $SNAPSHOT_NAME \\"
+  echo "openstack image create \\"
   echo "  --disk-format $CC_SNAPSHOT_DISK_FORMAT \\"
   echo "  --container-format bare \\"
   echo "  --property kernel_id=IMAGE_VMLINUZ_UUID \\"
   echo "  --property ramdisk_id=IMAGE_INITRD_UUID \\"
-  echo "  < $SNAPSHOT_QCOW2_COMPRESSED_PATH"
+  echo "  $SNAPSHOT_NAME <$SNAPSHOT_QCOW2_COMPRESSED_PATH"
 fi
 
 exit 0

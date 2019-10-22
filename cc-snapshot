@@ -110,7 +110,7 @@ fi
 function version { echo "$@" | gawk -F. '{ printf("%03d%03d%03d\n", $1,$2,$3); }'; }
 
 openstackclient_version=$(echo $(pip --disable-pip-version-check freeze | grep python-openstackclient) | awk -F"==" '{ print $2}')
-if [ "$(version "$openstackclient_version")" -lt "$(version "3.18.0")" ]; then
+if [ "$(version "$openstackclient_version")" -lt "$(version "3.16.0")" ]; then
   echo "The openstack client version is too old; please run 'sudo pip install python-openstackclient --upgrade' to update"
   exit 1
 fi

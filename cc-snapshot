@@ -112,6 +112,7 @@ function version { echo "$@" | gawk -F. '{ printf("%03d%03d%03d\n", $1,$2,$3); }
 openstackclient_version=$(echo $(pip --disable-pip-version-check freeze | grep python-openstackclient) | awk -F"==" '{ print $2}')
 if [ "$(version "$openstackclient_version")" -lt "$(version "3.16.0")" ]; then
   echo "The openstack client version is too old; please run 'sudo pip install python-openstackclient --upgrade' to update"
+  echo "If you are using python 2, please also run 'sudo pip install --upgrade \"more-itertools<6.0.0\"', since more-itertools (used by openstack client) dropped support of python 2 after version 6.0.0."
   exit 1
 fi
 ###### Check openstackclient version end ######

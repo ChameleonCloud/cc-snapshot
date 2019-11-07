@@ -155,6 +155,8 @@ cat >$EXCLUDE_FROM <<EOF
 /var/spool/postfix
 # Swift cloudfuse mount
 /home/cc/my_mounting_point
+# Ubuntu lxcfs
+/var/lib/lxcfs
 # User excludes
 $(printf "%s\n" "${EXCLUDE_FOLDERS[@]:-}")
 EOF
@@ -185,7 +187,7 @@ if hash jq 2>/dev/null; then
   REGION=$(echo $JSON_VENDOR_DATA | jq -r .region)
   PROJECT_ID=$(echo $JSON_VENDOR_DATA | jq -r .project_id)
 else
-  # jq not available in default xenial repos
+  # jq not available
   function extract_json_key {
     RESULT=$(echo "$2" | sed "s/.*$1\": \"//g" | sed 's/".*//g')
     echo "$RESULT"
@@ -245,7 +247,7 @@ fi
 
 # Create a tar file of the contents of your instance:
 declare -a TAR_ARGS=(--selinux --acls --numeric-owner --one-file-system --exclude-from $EXCLUDE_FROM)
-if [ "$UBUNTU_VERSION" != "xenial" ]; then
+if [ $DISTRO = $CENTOS ]; then
   TAR_ARGS+=(--xattrs)
 fi
 
@@ -253,7 +255,7 @@ fi
 n=0
 until [ $n -ge 5 ]
 do
-  tar cf $CC_SNAPSHOT_TAR_PATH / ${TAR_ARGS[@]} && break
+  tar --create --file $CC_SNAPSHOT_TAR_PATH ${TAR_ARGS[@]} / && break
   n=$[$n+1]
   sleep 15
 done
@@ -274,7 +276,7 @@ if [ ${LARGE_TAR_CONTINUE,,} != 'yes' ]; then
 fi
 
 if [ $DISTRO = $UBUNTU ]; then
-  if [ $UBUNTU_VERSION = "xenial" ]; then
+  if [ $UBUNTU_VERSION != "trusty" ]; then
     apt-get install -yq libguestfs-tools
   fi
 

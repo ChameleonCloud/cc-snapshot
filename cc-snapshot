@@ -46,7 +46,7 @@ print_usage() {
   echo " cc-snapshot version 0.2.0"
 }
 
-while getopts ":hp:e:f:y" opt; do
+while getopts "hpe:fy" opt; do
   case $opt in
     h)
       print_usage

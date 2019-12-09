@@ -16,6 +16,7 @@ OPENSTACK_VENDOR_DATA_2='http://169.254.169.254/openstack/latest/vendor_data2.js
 ## Chameleon Properties
 # ===============================================================================
 CHAMELEON_OS_AUTH_URL_TMPL='https://chi.SITE.chameleoncloud.org:5000/v3'
+PROVENANCE_FILE='/opt/chameleon/provenance.json'
 # ===============================================================================
 ## CC-Snapshot Properties
 # ===============================================================================
@@ -116,6 +117,18 @@ if [ "$(version "$openstackclient_version")" -lt "$(version "3.16.0")" ]; then
   exit 1
 fi
 ###### Check openstackclient version end ######
+
+###### Get provenance properties ######
+PROVENANCE_PROPERTIES=''
+if [ -f "$PROVENANCE_FILE" ]; then
+  for prop in $(cat $PROVENANCE_FILE | tr -d '\n' | tr -d [:space:] | tr -d '{' | tr -d '}' | tr ',' '\n');
+  do
+    prop="${prop/\":\"/=}"
+    prop="$(echo $prop | tr -d '"')"
+    PROVENANCE_PROPERTIES="--property provenance-$prop $PROVENANCE_PROPERTIES"
+  done
+fi
+###### Get provenance properties end ######
 
 set -eu
 set -o pipefail
@@ -364,6 +377,7 @@ if [ "$PARTITION_IMAGE" == false ]; then
   openstack image create \
     --disk-format $CC_SNAPSHOT_DISK_FORMAT \
     --container-format bare \
+    $PROVENANCE_PROPERTIES \
     $SNAPSHOT_NAME <$CC_SNAPSHOT_CONVERTED_COMPRESSED_PATH
 else
   echo "You asked for a partition image."

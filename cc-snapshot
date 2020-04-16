@@ -183,6 +183,11 @@ if [ $DISTRO = $UBUNTU ]; then
   UBUNTU_VERSION=$(lsb_release -c | awk '{print $2}')
 fi
 
+CENTOS_VERSION=''
+if [ $DISTRO = $CENTOS ]; then
+	CENTOS_VERSION=$(gawk -F= '/^VERSION_ID/{print $2}' /etc/os-release | tr -d \"\' | tr ' ' '-')
+fi
+
 # Configure env for glance to upload image
 # try vendordata2.json first and fallback to vendordata.json if empty
 JSON_VENDOR_DATA=$(curl -s $OPENSTACK_VENDOR_DATA_2)
@@ -252,7 +257,7 @@ set -e
 # Begin the snapshotting process
 #################################
 
-if [ $DISTRO = $CENTOS ]; then
+if [ $DISTRO = $CENTOS ] && [ $CENTOS_VERSION -eq 7 ]; then
   # Install prerequisite software (only required for XFS file systems, which is the default on CentOS 7):
   yum install -y libguestfs-xfs
   yum update -y lvm2 # must be at least 2.02-171 to avoid bug https://bugzilla.redhat.com/show_bug.cgi?id=1475018
@@ -288,6 +293,18 @@ if [ ${LARGE_TAR_CONTINUE,,} != 'yes' ]; then
   exit 0
 fi
 
+[[ -n ${LABEL:-} ]] || {
+  LABEL="$(ls -1 /dev/disk/by-label)"
+  if [[ "$(wc -l <<<"$LABEL")" != "1" ]]; then
+    >&2 echo "Unable to auto-detect disk label: found >1 labeled disks:"
+    >&2 echo "$(sed 's/\n/ - /g' <<<"$LABEL")"
+    >&2 echo "Please try again while explicitly setting the LABEL"
+    >&2 echo "env variable to the desired disk label."
+    exit 1
+  fi
+}
+FS="ext4"
+
 if [ $DISTRO = $UBUNTU ]; then
   if [ $UBUNTU_VERSION != "trusty" ]; then
     apt-get install -yq libguestfs-tools
@@ -301,24 +318,10 @@ if [ $DISTRO = $UBUNTU ]; then
   if [ "$(which update-guestfs-appliance)" != "" ]; then
     update-guestfs-appliance || true
   fi
-
-  FS="ext4"
-
-  [[ -n ${LABEL:-} ]] || {
-    LABEL="$(ls -1 /dev/disk/by-label)"
-    if [[ "$(wc -l <<<"$LABEL")" != "1" ]]; then
-      >&2 echo "Unable to auto-detect disk label: found >1 labeled disks:"
-      >&2 echo "$(sed 's/\n/ - /g' <<<"$LABEL")"
-      >&2 echo "Please try again while explicitly setting the LABEL"
-      >&2 echo "env variable to the desired disk label."
-      exit 1
-    fi
-  }
 fi
 
-if [ $DISTRO = $CENTOS ]; then
+if [ $DISTRO = $CENTOS ] && [ $CENTOS_VERSION -eq 7 ]; then
   FS="xfs"
-  LABEL="img-rootfs"
 fi
 
 ARCH=`uname -i`

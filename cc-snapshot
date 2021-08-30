@@ -217,10 +217,9 @@ else
   TOKEN=$(extract_json_key "service_token" "$JSON_VENDOR_DATA")
 fi
 
-if [ "$SITE" != "tacc" ] && [ "$SITE" != "uc" ]; then
+if dmesg | grep -q Hypervisor; then
   # The current instance is apparently not a baremetal node.
-  >&2 echo "Error: Could not detect which site you are using (got \"$SITE\")."
-  >&2 echo "cc-snapshot is only supported for baremetal instances."
+  >&2 echo "Error: cc-snapshot is only supported for baremetal instances."
   exit 1
 fi
 

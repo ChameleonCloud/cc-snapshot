@@ -15,7 +15,6 @@ OPENSTACK_VENDOR_DATA_2='http://169.254.169.254/openstack/latest/vendor_data2.js
 # ===============================================================================
 ## Chameleon Properties
 # ===============================================================================
-CHAMELEON_OS_AUTH_URL_TMPL='https://chi.SITE.chameleoncloud.org:5000/v3'
 PROVENANCE_FILE='/opt/chameleon/provenance.json'
 # ===============================================================================
 ## CC-Snapshot Properties
@@ -205,6 +204,7 @@ if hash jq 2>/dev/null; then
   REGION=$(echo $JSON_VENDOR_DATA | jq -r .region)
   PROJECT_ID=$(echo $JSON_VENDOR_DATA | jq -r .project_id)
   TOKEN=$(echo $JSON_VENDOR_DATA | jq -r .service_token)
+  OS_AUTH_URL=$(echo $JSON_VENDOR_DATA | jq -r .auth_url_v3)
 else
   # jq not available
   function extract_json_key {
@@ -215,6 +215,7 @@ else
   REGION=$(extract_json_key "region" "$JSON_VENDOR_DATA")
   PROJECT_ID=$(extract_json_key "project_id" "$JSON_VENDOR_DATA")
   TOKEN=$(extract_json_key "service_token" "$JSON_VENDOR_DATA")
+  OS_AUTH_URL=$(extract_json_key "auth_url_v3" "$JSON_VENDOR_DATA")
 fi
 
 if dmesg | grep -q Hypervisor; then
@@ -226,7 +227,7 @@ fi
 export OS_REGION_NAME=$REGION
 if [ -z "$OS_REGION_NAME" ]; then unset OS_REGION_NAME; fi
 
-export OS_AUTH_URL=$(echo $CHAMELEON_OS_AUTH_URL_TMPL | sed "s/SITE/$SITE/g")
+export OS_AUTH_URL=$OS_AUTH_URL
 export OS_IDENTITY_API_VERSION=3
 export OS_PROJECT_ID=$PROJECT_ID
 export OS_TOKEN=$TOKEN

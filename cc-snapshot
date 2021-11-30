@@ -339,7 +339,7 @@ if [ $DISTRO = $UBUNTU ]; then
     esac
     CC_SNAPSHOT_CONVERTED_PATH=/tmp/snapshot.img
     filesystem_size=$(du -d 0 -m --exclude-from=$EXCLUDE_FROM / |  awk -F" "  '{ print $1 }')
-    total_disk_size=$(($filesystem_size + 550 + 8))
+    total_disk_size=$(($filesystem_size + 1500))
 
     # 550M for UEFI partition and 8M for BIOS partition
     guestfish -N $CC_SNAPSHOT_CONVERTED_PATH=disk:"$total_disk_size"M -- \

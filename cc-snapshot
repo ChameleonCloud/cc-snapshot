@@ -29,7 +29,6 @@ CC_SNAPSHOT_CONVERTED_COMPRESSED_PATH=/tmp/snapshot_compressed.qcow2
 CC_SNAPSHOT_MAX_TARBALL_SIZE=8000
 # ===============================================================================
 
-PARTITION_IMAGE=false
 IGNORE_WARNING=false
 FORCE_YES=false
 
@@ -38,7 +37,6 @@ print_usage() {
   echo "Optional arguments:"
   echo ""
   echo "  -h        Print this help message"
-  echo "  -p        Create a partition image (separate kernel and ramdisk, no MBR)"
   echo "  -e        Exclude folder while snapshotting (can be used multiple times to exclude multiple folders)"
   echo "  -f        Ignore all warnings"
   echo "  -y        Answer 'yes' to all prompts"
@@ -51,9 +49,6 @@ while getopts "hpe:fy" opt; do
     h)
       print_usage
       exit 0
-      ;;
-    p)
-      PARTITION_IMAGE=true
       ;;
     e)
       EXCLUDE_FOLDERS+=("$OPTARG")
@@ -270,7 +265,7 @@ done
 SNAPSHOT_TAR_SIZE=$(($(stat -c %s $CC_SNAPSHOT_TAR_PATH) / 1024 / 1024 ))
 LARGE_TAR_CONTINUE='yes'
 if [ $SNAPSHOT_TAR_SIZE -gt $CC_SNAPSHOT_MAX_TARBALL_SIZE ] && [ "$IGNORE_WARNING" == false ]; then
-  echo 'WARNING: snapshot is too large! May cause issues.'
+  echo "WARNING: snapshot is too large ($SNAPSHOT_TAR_SIZE)! May cause issues."
   echo 'Do you want to continue? (yes/no)'
   read -r LARGE_TAR_CONTINUE_INPUT
   export LARGE_TAR_CONTINUE=$LARGE_TAR_CONTINUE_INPUT
@@ -280,18 +275,6 @@ if [ ${LARGE_TAR_CONTINUE,,} != 'yes' ]; then
   echo 'Aborting...'
   exit 0
 fi
-
-[[ -n ${LABEL:-} ]] || {
-  LABEL="$(ls -1 /dev/disk/by-label)"
-  if [[ "$(wc -l <<<"$LABEL")" != "1" ]]; then
-    >&2 echo "Unable to auto-detect disk label: found >1 labeled disks:"
-    >&2 echo "$(sed 's/\n/ - /g' <<<"$LABEL")"
-    >&2 echo "Please try again while explicitly setting the LABEL"
-    >&2 echo "env variable to the desired disk label."
-    exit 1
-  fi
-}
-FS="ext4"
 
 if [ $DISTRO = $UBUNTU ]; then
   if [ $UBUNTU_VERSION != "trusty" ]; then
@@ -308,50 +291,70 @@ if [ $DISTRO = $UBUNTU ]; then
   fi
 fi
 
+FS="ext4"
 if [ $DISTRO = $CENTOS ] && [ $CENTOS_VERSION -eq 7 ]; then
   FS="xfs"
 fi
 
-ARCH=`uname -i`
-# The following is not necessary if the U-Boot kernel and ramdisk are installed at
-# /boot/uImage and /boot/uInitrd, allowing the generic kernel to reside in the
-# expected place.
-#if [ "$ARCH" == "aarch64" ]; then
-#  # The libguestfs appliance is not compatible with uboot kernels.
-#  # We assume that there is a kernel available at /boot/vmlinuz-libguestfs
-#  export SUPERMIN_KERNEL=/boot/vmlinuz-libguestfs
-#  export SUPERMIN_KERNEL_VERSION=`readlink /boot/vmlinuz | sed 's/vmlinuz-\(.*\)/\1/'`
-#fi
+[[ -n ${LABEL:-} ]] || {
+  LABEL="$(e2label $(findfs TYPE=$FS))"
+  if [ ! -L "/dev/disk/by-label/$LABEL" ]; then
+    LABEL="$(ls -1 /dev/disk/by-label)"
+    if [[ "$(wc -l <<<"$LABEL")" != "1" ]]; then
+      >&2 echo "Unable to auto-detect disk label: found >1 labeled disks:"
+      >&2 echo "$(sed 's/\n/ - /g' <<<"$LABEL")"
+      >&2 echo "Please try again while explicitly setting the LABEL"
+      >&2 echo "env variable to the desired disk label."
+      exit 1
+    fi
+  fi
+}
 
-# Confusingly, virt-make-fs uses the --partition flag to request adding an MBR
-# to the image, while what we (and Ironic) call partition images are images
-# without MBR, hence the inverted logic with the PARTITION_IMAGE variable.
-if [ "$PARTITION_IMAGE" == false ]; then
-  VIRT_MAKE_FS="virt-make-fs --partition"
-else
-  VIRT_MAKE_FS="virt-make-fs"
-fi
+if [ $DISTRO = $CENTOS ]; then
+    # TODO: UEFI support for centos
 
-# This will take 3 to 5 minutes. Next, convert the tar file into a qcow2 image
-# (if you don't want to use the XFS file system, you can replace xfs by ext4):
-$VIRT_MAKE_FS --format="$CC_SNAPSHOT_DISK_FORMAT" \
-  --type="$FS" \
-  --label="$LABEL" \
-  "$CC_SNAPSHOT_TAR_PATH" \
-  "$CC_SNAPSHOT_CONVERTED_PATH"
-
-# Our ARM64 images use U-Boot, so don't install GRUB
-if [ "$PARTITION_IMAGE" == false ] && [ "$ARCH" != "aarch64" ]; then
-  if [ $DISTRO = $CENTOS ]; then
+    # This will take 3 to 5 minutes. Next, convert the tar file into a qcow2 image
+    # (if you don't want to use the XFS file system, you can replace xfs by ext4):
+    virt-make-fs --partition --format="$CC_SNAPSHOT_DISK_FORMAT" \
+    --type="$FS" \
+    --label="$LABEL" \
+    "$CC_SNAPSHOT_TAR_PATH" \
+    "$CC_SNAPSHOT_CONVERTED_PATH"
     # and looking at the name of the file in that directory. Next ensure that the GRUB bootloader is present in the image:
     virt-customize -a $CC_SNAPSHOT_CONVERTED_PATH --run-command 'grub2-install /dev/sda && grub2-mkconfig -o /boot/grub2/grub.cfg'
-  fi
-
-  if [ $DISTRO = $UBUNTU ]; then
-    # Next ensure that the GRUB bootloader is present in the image:
-    guestfish -a $CC_SNAPSHOT_CONVERTED_PATH -i sh 'grub-install /dev/sda && grub-mkconfig -o /boot/grub/grub.cfg'
-  fi
 fi
+
+if [ $DISTRO = $UBUNTU ]; then
+    # Next ensure that the GRUB bootloader is present in the image:
+    ARCH=$(uname -i)
+    case "$ARCH" in
+        "x86_64") GRUB_INSTALL_TARGET="x86_64-efi"
+        ;;
+        "aarch64"|"arm64") GRUB_INSTALL_TARGET="arm64-efi"
+        ;;
+        *)
+            echo "$ARCH unsupported!"
+            exit 1
+        ;;
+    esac
+    CC_SNAPSHOT_CONVERTED_PATH=/tmp/snapshot.img
+    filesystem_size=$(du -d 0 -m --exclude-from=$EXCLUDE_FROM / |  awk -F" "  '{ print $1 }')
+    total_disk_size=$(($filesystem_size + 550 + 8))
+
+    # 550M for UEFI partition and 8M for BIOS partition
+    guestfish -N $CC_SNAPSHOT_CONVERTED_PATH=disk:"$total_disk_size"M -- \
+    part-init /dev/sda gpt : \
+    part-add /dev/sda primary 2048 1128447 : \
+    part-add /dev/sda primary 1128448 1144831 : \
+    part-add /dev/sda primary 1144832 -40 : \
+    mkfs $FS /dev/sda3 label:$LABEL : \
+    mkfs vfat /dev/sda1 : \
+    mount /dev/sda3 / : tar-in $CC_SNAPSHOT_TAR_PATH / : mount /dev/sda1 /boot/efi : \
+    sh "parted /dev/sda set 2 bios_grub on" : \
+    sh "parted /dev/sda set 1 esp on" : \
+    sh "grub-install --target=$GRUB_INSTALL_TARGET --efi-directory=/boot/efi --removable && grub-install /dev/sda && grub-mkconfig -o /boot/grub/grub.cfg"
+fi
+
 
 # To remove unwanted configuration information from your image, run:
 virt-sysprep -a $CC_SNAPSHOT_CONVERTED_PATH
@@ -364,24 +367,10 @@ qemu-img convert $CC_SNAPSHOT_CONVERTED_PATH -O $CC_SNAPSHOT_DISK_FORMAT $CC_SNA
 ################################
 
 # The final steps are to upload your snapshot image to OpenStack Glance.
-if [ "$PARTITION_IMAGE" == false ]; then
-  openstack image create \
-    --disk-format $CC_SNAPSHOT_DISK_FORMAT \
-    --container-format bare \
-    $PROVENANCE_PROPERTIES \
-    $SNAPSHOT_NAME <$CC_SNAPSHOT_CONVERTED_COMPRESSED_PATH
-else
-  echo "You asked for a partition image."
-  echo "You will need to upload your kernel and ramdisk to Glance before uploading your image."
-  echo "You may want to run 'source /tmp/openrc' to set your OpenStack credentials."
-  echo "After kernel and ramdisk are uploaded, run the below, filling in IMAGE_..._UUID:"
-  echo
-  echo "openstack image create \\"
-  echo "  --disk-format $CC_SNAPSHOT_DISK_FORMAT \\"
-  echo "  --container-format bare \\"
-  echo "  --property kernel_id=IMAGE_VMLINUZ_UUID \\"
-  echo "  --property ramdisk_id=IMAGE_INITRD_UUID \\"
-  echo "  $SNAPSHOT_NAME <$SNAPSHOT_QCOW2_COMPRESSED_PATH"
-fi
+openstack image create \
+--disk-format $CC_SNAPSHOT_DISK_FORMAT \
+--container-format bare \
+$PROVENANCE_PROPERTIES \
+$SNAPSHOT_NAME <$CC_SNAPSHOT_CONVERTED_COMPRESSED_PATH
 
 exit 0

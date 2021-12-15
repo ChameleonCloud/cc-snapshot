@@ -23,7 +23,7 @@ PROVENANCE_FILE='/opt/chameleon/provenance.json'
 CC_SNAPSHOT_DISK_FORMAT=qcow2
 # Generated snapshot locations
 CC_SNAPSHOT_TAR_PATH=/tmp/snapshot.tar
-CC_SNAPSHOT_CONVERTED_PATH=/tmp/snapshot.qcow2
+CC_SNAPSHOT_CONVERTED_PATH=/tmp/snapshot.img
 CC_SNAPSHOT_CONVERTED_COMPRESSED_PATH=/tmp/snapshot_compressed.qcow2
 # Max snapshot tarball size (MB) for save upload
 CC_SNAPSHOT_MAX_TARBALL_SIZE=8000
@@ -171,6 +171,7 @@ EOF
 DISTRO=$(gawk -F= '/^NAME/{print $2}' /etc/os-release | tr -d \"\' | tr ' ' '-')
 UBUNTU='Ubuntu'
 CENTOS='CentOS-Linux'
+CENTOS_STREAM='CentOS-Stream'
 
 UBUNTU_VERSION=''
 if [ $DISTRO = $UBUNTU ]; then
@@ -180,6 +181,11 @@ fi
 CENTOS_VERSION=''
 if [ $DISTRO = $CENTOS ]; then
 	CENTOS_VERSION=$(gawk -F= '/^VERSION_ID/{print $2}' /etc/os-release | tr -d \"\' | tr ' ' '-')
+fi
+
+CENTOS_STREAM_VERSION=''
+if [ $DISTRO = $CENTOS_STREAM ]; then
+    CENTOS_STREAM_VERSION=$(gawk -F= '/^VERSION_ID/{print $2}' /etc/os-release | tr -d \"\' | tr ' ' '-')
 fi
 
 # Configure env for glance to upload image
@@ -292,9 +298,6 @@ if [ $DISTRO = $UBUNTU ]; then
 fi
 
 FS="ext4"
-if [ $DISTRO = $CENTOS ] && [ $CENTOS_VERSION -eq 7 ]; then
-  FS="xfs"
-fi
 
 [[ -n ${LABEL:-} ]] || {
   LABEL="$(e2label $(findfs TYPE=$FS))"
@@ -310,50 +313,71 @@ fi
   fi
 }
 
-if [ $DISTRO = $CENTOS ]; then
-    # TODO: UEFI support for centos
+# Next ensure that the GRUB bootloader is present in the image:
+EXTRA_CMD=""
 
-    # This will take 3 to 5 minutes. Next, convert the tar file into a qcow2 image
-    # (if you don't want to use the XFS file system, you can replace xfs by ext4):
-    virt-make-fs --partition --format="$CC_SNAPSHOT_DISK_FORMAT" \
-    --type="$FS" \
-    --label="$LABEL" \
-    "$CC_SNAPSHOT_TAR_PATH" \
-    "$CC_SNAPSHOT_CONVERTED_PATH"
-    # and looking at the name of the file in that directory. Next ensure that the GRUB bootloader is present in the image:
-    virt-customize -a $CC_SNAPSHOT_CONVERTED_PATH --run-command 'grub2-install /dev/sda && grub2-mkconfig -o /boot/grub2/grub.cfg'
+GRUBNAME=$(type -p grub-install) || echo "trying grub2-install"
+if [ -z "$GRUBNAME" ]; then
+    GRUBNAME=$(type -p grub2-install)
 fi
 
-if [ $DISTRO = $UBUNTU ]; then
-    # Next ensure that the GRUB bootloader is present in the image:
-    ARCH=$(uname -i)
-    case "$ARCH" in
-        "x86_64") GRUB_INSTALL_TARGET="x86_64-efi"
-        ;;
-        "aarch64"|"arm64") GRUB_INSTALL_TARGET="arm64-efi"
-        ;;
-        *)
-            echo "$ARCH unsupported!"
-            exit 1
-        ;;
-    esac
-    CC_SNAPSHOT_CONVERTED_PATH=/tmp/snapshot.img
-    filesystem_size=$(du -d 0 -m --exclude-from=$EXCLUDE_FROM / |  awk -F" "  '{ print $1 }')
-    total_disk_size=$(($filesystem_size + 1500))
-
-    # 550M for UEFI partition and 8M for BIOS partition
-    guestfish -N $CC_SNAPSHOT_CONVERTED_PATH=disk:"$total_disk_size"M -- \
-    part-init /dev/sda gpt : \
-    part-add /dev/sda primary 2048 1128447 : \
-    part-add /dev/sda primary 1128448 1144831 : \
-    part-add /dev/sda primary 1144832 -40 : \
-    mkfs $FS /dev/sda3 label:$LABEL : \
-    mkfs vfat /dev/sda1 : \
-    mount /dev/sda3 / : tar-in $CC_SNAPSHOT_TAR_PATH / : mount /dev/sda1 /boot/efi : \
-    sh "parted /dev/sda set 2 bios_grub on" : \
-    sh "parted /dev/sda set 1 esp on" : \
-    sh "grub-install --target=$GRUB_INSTALL_TARGET --efi-directory=/boot/efi --removable && grub-install /dev/sda && grub-mkconfig -o /boot/grub/grub.cfg"
+if [ $DISTRO = $CENTOS ] || [ $DISTRO = $CENTOS_STREAM ]; then
+    EFI_BOOT_DIR="/boot/efi/EFI/centos"
+elif [ $DISTRO = $UBUNTU ]; then
+    EFI_BOOT_DIR="/boot/efi/EFI/ubuntu"
 fi
+
+if type grub2-mkconfig >/dev/null; then
+    GRUB_MKCONFIG="grub2-mkconfig"
+else
+    GRUB_MKCONFIG="grub-mkconfig"
+fi
+
+if [ -d /boot/grub2 ]; then
+    GRUB_CFG=/boot/grub2/grub.cfg
+    GRUB_ENV=/boot/grub2/grubenv
+    EXTRA_CMD="&& mkdir -p $EFI_BOOT_DIR && cp $GRUB_CFG $EFI_BOOT_DIR/grub.cfg && cp $GRUB_ENV $EFI_BOOT_DIR/grubenv"
+else
+    GRUB_CFG=/boot/grub/grub.cfg
+fi
+
+ARCH=$(uname -i)
+case "$ARCH" in
+    "x86_64") GRUB_INSTALL_TARGET="x86_64-efi"
+    ;;
+    "aarch64"|"arm64") GRUB_INSTALL_TARGET="arm64-efi"
+    ;;
+    *)
+        echo "$ARCH unsupported!"
+        exit 1
+    ;;
+esac
+
+extra_options=""
+if [ ! -d $EFI_BOOT_DIR ]; then
+    # This tells the EFI install to put the EFI binaries into
+    # the generic /BOOT directory and avoids trying to update
+    # nvram settings.
+    extra_options="--efi-directory=/boot/efi --target=$GRUB_INSTALL_TARGET --removable && $GRUBNAME /dev/sda"
+else
+    extra_options="/dev/sda"
+fi
+
+filesystem_size=$(du -d 0 -m --exclude-from=$EXCLUDE_FROM / |  awk -F" "  '{ print $1 }')
+total_disk_size=$(($filesystem_size + 1500))
+
+# 550M for UEFI partition and 8M for BIOS partition
+guestfish -N $CC_SNAPSHOT_CONVERTED_PATH=disk:"$total_disk_size"M -- \
+part-init /dev/sda gpt : \
+part-add /dev/sda primary 2048 1128447 : \
+part-add /dev/sda primary 1128448 1144831 : \
+part-add /dev/sda primary 1144832 -40 : \
+mkfs $FS /dev/sda3 label:$LABEL : \
+mkfs vfat /dev/sda1 label:MKFS_ESP : \
+mount /dev/sda3 / : tar-in $CC_SNAPSHOT_TAR_PATH / : mount /dev/sda1 /boot/efi : \
+sh "parted /dev/sda set 2 bios_grub on" : \
+sh "parted /dev/sda set 1 esp on || true" : \
+sh "$GRUBNAME $extra_options && $GRUB_MKCONFIG -o $GRUB_CFG $EXTRA_CMD"
 
 
 # To remove unwanted configuration information from your image, run:

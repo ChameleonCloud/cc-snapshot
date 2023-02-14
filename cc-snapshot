@@ -327,7 +327,7 @@ elif [ $DISTRO = $UBUNTU ]; then
     EFI_BOOT_DIR="/boot/efi/EFI/ubuntu"
 fi
 
-if type grub2-mkconfig >/dev/null; then
+if type grub2-mkconfig > /dev/null 2>&1; then
     GRUB_MKCONFIG="grub2-mkconfig"
 else
     GRUB_MKCONFIG="grub-mkconfig"

@@ -300,7 +300,7 @@ fi
 FS="ext4"
 
 [[ -n ${LABEL:-} ]] || {
-  LABEL="$(e2label $(findfs TYPE=$FS))"
+  LABEL="$(sudo e2label $(findmnt -t ext4 -J | jq -r ".filesystems[].source" ))"
   if [ ! -L "/dev/disk/by-label/$LABEL" ]; then
     LABEL="$(ls -1 /dev/disk/by-label)"
     if [[ "$(wc -l <<<"$LABEL")" != "1" ]]; then

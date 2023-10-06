@@ -252,6 +252,18 @@ if [ $DISTRO = $CENTOS ] && [ $CENTOS_VERSION -eq 7 ]; then
   yum update -y lvm2 # must be at least 2.02-171 to avoid bug https://bugzilla.redhat.com/show_bug.cgi?id=1475018
 fi
 
+
+if [ $DISTRO = $UBUNTU ]; then
+  # Ensure /boot/efi directory exists and install grub-efi if it doesn't
+  if [ ! -d /boot/efi ]; then
+    echo "Creating /boot/efi directory..."
+    sudo mkdir -p /boot/efi
+    echo "Installing grub-efi..."
+    apt-get install -yq grub-efi
+  fi
+fi
+
+
 # Create a tar file of the contents of your instance:
 declare -a TAR_ARGS=(--selinux --acls --numeric-owner --one-file-system --exclude-from $EXCLUDE_FROM)
 if [ $DISTRO = $CENTOS ]; then

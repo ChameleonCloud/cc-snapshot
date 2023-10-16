@@ -31,3 +31,18 @@ cc-snapshot will ask for your Chameleon password, and after a few minutes, a sna
     sudo yum makecache
     sudo yum update lvm2
     ```
+
+## Supported Operating Systems
+
+cc-snapshot supports the following operating systems:
+
+### CentOS Distributions
+
+- CentOS Linux
+- CentOS Stream
+
+### Ubuntu Distributions
+
+- All Ubuntu distributions
+
+**Note:** The script is also designed to work with non-UEFI boot installations of Ubuntu.

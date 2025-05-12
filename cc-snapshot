@@ -119,6 +119,7 @@ if [ -f "$PROVENANCE_FILE" ]; then
   do
     prop="${prop/\":\"/=}"
     prop="$(echo $prop | tr -d '"')"
+    [[ $prop == chameleon-supported* ]] && continue
     PROVENANCE_PROPERTIES="--property provenance-$prop $PROVENANCE_PROPERTIES"
   done
 fi

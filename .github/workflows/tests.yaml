@@ -12,3 +12,6 @@ jobs:
 
       - name: Run provenance tests
         run: ./tests/test_provenance.sh
+
+      - name: Run interface tests
+        run: ./tests/test_interface.sh

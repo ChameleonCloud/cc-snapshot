@@ -15,6 +15,14 @@ pass() {
 
 CC_SNAPSHOT=../cc-snapshot
 
+# Test 2: -e without folder
+output=$(TESTING_SKIP_ROOT_CHECK=1 "$CC_SNAPSHOT" -e 2>&1) && status=0 || status=$?
+if [[ $status -ne 0 && "$output" == *"usage:"* ]]; then
+  pass "-e without folder fails with error"
+else
+  fail "-e without folder did not fail as expected"
+fi
+
 # Test 1: Help option (-h)
 output=$(TESTING_SKIP_ROOT_CHECK=1 "$CC_SNAPSHOT" -h 2>&1) || true
 if [[ "$output" == *"usage:"* ]]; then

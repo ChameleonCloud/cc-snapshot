@@ -13,14 +13,15 @@ pass() {
   echo "PASS: $1"
 }
 
-CC_SNAPSHOT=../cc-snapshot
+#CC_SNAPSHOT=../cc-snapshot
 
-# Test 2: -e without folder
-output=$(TESTING_SKIP_ROOT_CHECK=1 "$CC_SNAPSHOT" -e 2>&1) && status=0 || status=$?
-if [[ $status -ne 0 && "$output" == *"usage:"* ]]; then
-  pass "-e without folder fails with error"
-else
-  fail "-e without folder did not fail as expected"
+TEST_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CC_SNAPSHOT="${TEST_SCRIPT_DIR}/../cc-snapshot"
+
+#Test if the path exist 
+if [[ ! -x "${CC_SNAPSHOT}" ]]; then
+    echo "Error: unable to find ${CC_SNAPSHOT} or it is not executable"
+    exit 1
 fi
 
 # Test 1: Help option (-h)

@@ -13,8 +13,6 @@ pass() {
   echo "PASS: $1"
 }
 
-#CC_SNAPSHOT=../cc-snapshot
-
 TEST_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CC_SNAPSHOT="${TEST_SCRIPT_DIR}/../cc-snapshot"
 

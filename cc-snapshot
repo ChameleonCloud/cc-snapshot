@@ -31,20 +31,22 @@ CC_SNAPSHOT_MAX_TARBALL_SIZE=8000
 
 IGNORE_WARNING=false
 FORCE_YES=false
+SKIP_UPDATE=false
 
 print_usage() {
-  echo "usage: $0 [-p] [-e folder_to_exclude] snapshot_name"
+  echo "usage: $0 [-p] [-e folder_to_exclude] [-u] snapshot_name"
   echo "Optional arguments:"
   echo ""
   echo "  -h        Print this help message"
   echo "  -e        Exclude folder while snapshotting (can be used multiple times to exclude multiple folders)"
   echo "  -f        Ignore all warnings"
   echo "  -y        Answer 'yes' to all prompts"
+  echo "  -u        Skip the automatic self-update check"
   echo ""
   echo " cc-snapshot version 0.2.0"
 }
 
-while getopts "hpe:fy" opt; do
+while getopts "hpe:fyu" opt; do
   case $opt in
     h)
       print_usage
@@ -59,6 +61,9 @@ while getopts "hpe:fy" opt; do
     y)
       FORCE_YES=true
       ;;
+    u)
+      SKIP_UPDATE=true
+      ;;
     \?)
       echo "Invalid option: -$OPTARG" >&2
       print_usage
@@ -67,33 +72,38 @@ while getopts "hpe:fy" opt; do
   esac
 done
 
+shift $((OPTIND - 1))
+
 ###### Update section ######
 
 #Download latest version, assign versions to variables, curlstat variable ensures update only executes if curl succeeds.
 #------------------------------------------------
-SCRIPT=$0
-curl -s -o /tmp/tmp-snap https://raw.githubusercontent.com/ChameleonCloud/cc-snapshot/master/cc-snapshot
-CURLSTAT=$?
-NEWSCRIPT='/tmp/tmp-snap'
+if [[ "$SKIP_UPDATE" == false ]]; then
+  echo ">> Running self-update check"
+  SCRIPT=$0
+  curl -s -o /tmp/tmp-snap https://raw.githubusercontent.com/ChameleonCloud/cc-snapshot/master/cc-snapshot
+  CURLSTAT=$?
+  NEWSCRIPT='/tmp/tmp-snap'
 
 #Compare files and update if cc-snapshot outdated
 #------------------------------------------------
-diff -q "$SCRIPT" "$NEWSCRIPT" &>/dev/null
-DIFF=$?
-if [ $DIFF -eq 1 ] && [ $CURLSTAT -eq 0 ]; then
-  echo 'Your cc-snapshot is not up to date.'
-  if [ $IGNORE_WARNING == false ]; then
-  	if [ $FORCE_YES == false ]; then
-      read -ep 'Update now? [y/n]'
-    else
-      REPLY=y
-    fi
+  diff -q "$SCRIPT" "$NEWSCRIPT" &>/dev/null
+  DIFF=$?
+  if [ $DIFF -eq 1 ] && [ $CURLSTAT -eq 0 ]; then
+    echo 'Your cc-snapshot is not up to date.'
+    if [ $IGNORE_WARNING == false ]; then
+          if [ $FORCE_YES == false ]; then
+        read -ep 'Update now? [y/n]'
+      else
+        REPLY=y
+      fi
 
-  	if [[ $REPLY =~ ^[Yy]$ ]]; then
-    	mv --backup=t "$SCRIPT" "$SCRIPT'-old'"
-    	mv "$NEWSCRIPT" "$SCRIPT"
-    	chmod +x "$SCRIPT"
-  	  exec "$SCRIPT" "$@"
+          if [[ $REPLY =~ ^[Yy]$ ]]; then
+          mv --backup=t "$SCRIPT" "$SCRIPT'-old'"
+          mv "$NEWSCRIPT" "$SCRIPT"
+          chmod +x "$SCRIPT"
+            exec "$SCRIPT" "$@"
+      fi
     fi
   fi
 fi

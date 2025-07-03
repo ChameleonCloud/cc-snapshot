@@ -106,8 +106,10 @@ if [[ "$SKIP_UPDATE" == false ]]; then
       fi
     fi
   fi
-fi
 
+else
+  echo "Skipping self update that was disabled."
+fi
 ###### Update section end ######
 
 ###### Check openstackclient version ######

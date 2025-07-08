@@ -258,168 +258,179 @@ set -e
 #################################
 # Begin the snapshotting process
 #################################
-
-if [ $DISTRO = $CENTOS ] && [ $CENTOS_VERSION -eq 7 ]; then
-  # Install prerequisite software (only required for XFS file systems, which is the default on CentOS 7):
-  yum install -y libguestfs-xfs
-  yum update -y lvm2 # must be at least 2.02-171 to avoid bug https://bugzilla.redhat.com/show_bug.cgi?id=1475018
-fi
-
-
-if [ $DISTRO = $UBUNTU ]; then
-  # Ensure /boot/efi directory exists and install grub-efi if it doesn't
-  if [ ! -d /boot/efi ]; then
-    echo "Creating /boot/efi directory..."
-    sudo mkdir -p /boot/efi
-    echo "Installing grub-efi..."
-    apt-get install -yq grub-efi
-  fi
-fi
-
-
-# Create a tar file of the contents of your instance:
-declare -a TAR_ARGS=(--selinux --acls --numeric-owner --one-file-system --exclude-from $EXCLUDE_FROM)
-if [ $DISTRO = $CENTOS ]; then
-  TAR_ARGS+=(--xattrs)
-fi
-
-# The following code is inspired from http://unix.stackexchange.com/questions/82598
-n=0
-until [ $n -ge 5 ]
-do
-  tar --create --file $CC_SNAPSHOT_TAR_PATH ${TAR_ARGS[@]} / && break
-  n=$[$n+1]
-  sleep 15
-done
-
-# Get the size of tar and warn user if exceeds threshold property
-SNAPSHOT_TAR_SIZE=$(($(stat -c %s $CC_SNAPSHOT_TAR_PATH) / 1024 / 1024 ))
-LARGE_TAR_CONTINUE='yes'
-if [ $SNAPSHOT_TAR_SIZE -gt $CC_SNAPSHOT_MAX_TARBALL_SIZE ] && [ "$IGNORE_WARNING" == false ]; then
-  echo "WARNING: snapshot is too large ($SNAPSHOT_TAR_SIZE)! May cause issues."
-  echo 'Do you want to continue? (yes/no)'
-  read -r LARGE_TAR_CONTINUE_INPUT
-  export LARGE_TAR_CONTINUE=$LARGE_TAR_CONTINUE_INPUT
-fi
-
-if [ ${LARGE_TAR_CONTINUE,,} != 'yes' ]; then
-  echo 'Aborting...'
-  exit 0
-fi
-
-if [ $DISTRO = $UBUNTU ]; then
-  if [ $UBUNTU_VERSION != "trusty" ]; then
-    apt-get install -yq libguestfs-tools
+install_preequisites(){
+  if [ $DISTRO = $CENTOS ] && [ $CENTOS_VERSION -eq 7 ]; then
+    # Install prerequisite software (only required for XFS file systems, which is the default on CentOS 7):
+    yum install -y libguestfs-xfs
+    yum update -y lvm2 # must be at least 2.02-171 to avoid bug https://bugzilla.redhat.com/show_bug.cgi?id=1475018
   fi
 
-  # Update guestfs appliances (prevent an error with virt-make-fs);
-  # BUG: one package cannot be found (kpartx) and cause update-guestfs-appliance
-  #      to exit with an error code;
-  apt-get -yq update # APT repos may need an update in order to find kpartx
-  apt-get install -yq kpartx
-  if [ "$(which update-guestfs-appliance)" != "" ]; then
-    update-guestfs-appliance || true
-  fi
-fi
 
-FS="ext4"
-
-[[ -n ${LABEL:-} ]] || {
-  LABEL="$(sudo e2label $(findmnt -t ext4 -J | jq -r ".filesystems[].source" ))"
-  if [ ! -L "/dev/disk/by-label/$LABEL" ]; then
-    LABEL="$(ls -1 /dev/disk/by-label)"
-    if [[ "$(wc -l <<<"$LABEL")" != "1" ]]; then
-      >&2 echo "Unable to auto-detect disk label: found >1 labeled disks:"
-      >&2 echo "$(sed 's/\n/ - /g' <<<"$LABEL")"
-      >&2 echo "Please try again while explicitly setting the LABEL"
-      >&2 echo "env variable to the desired disk label."
-      exit 1
+  if [ $DISTRO = $UBUNTU ]; then
+    # Ensure /boot/efi directory exists and install grub-efi if it doesn't
+    if [ ! -d /boot/efi ]; then
+      echo "Creating /boot/efi directory..."
+      sudo mkdir -p /boot/efi
+      echo "Installing grub-efi..."
+      apt-get install -yq grub-efi
     fi
   fi
 }
 
-# Next ensure that the GRUB bootloader is present in the image:
-EXTRA_CMD=""
+# Create a tar file of the contents of your instance:
+prepare_tarball(){
+  declare -a TAR_ARGS=(--selinux --acls --numeric-owner --one-file-system --exclude-from $EXCLUDE_FROM)
+  if [ $DISTRO = $CENTOS ]; then
+    TAR_ARGS+=(--xattrs)
+  fi
 
-GRUBNAME=$(type -p grub-install) || echo "trying grub2-install"
-if [ -z "$GRUBNAME" ]; then
-    GRUBNAME=$(type -p grub2-install)
-fi
+  # The following code is inspired from http://unix.stackexchange.com/questions/82598
+  n=0
+  until [ $n -ge 5 ]
+  do
+    tar --create --file $CC_SNAPSHOT_TAR_PATH ${TAR_ARGS[@]} / && break
+    n=$[$n+1]
+    sleep 15
+  done
+}
+# Get the size of tar and warn user if exceeds threshold property
+check_size(){ 
+  SNAPSHOT_TAR_SIZE=$(($(stat -c %s $CC_SNAPSHOT_TAR_PATH) / 1024 / 1024 ))
+  LARGE_TAR_CONTINUE='yes'
+  if [ $SNAPSHOT_TAR_SIZE -gt $CC_SNAPSHOT_MAX_TARBALL_SIZE ] && [ "$IGNORE_WARNING" == false ]; then
+    echo "WARNING: snapshot is too large ($SNAPSHOT_TAR_SIZE)! May cause issues."
+    echo 'Do you want to continue? (yes/no)'
+    read -r LARGE_TAR_CONTINUE_INPUT
+    export LARGE_TAR_CONTINUE=$LARGE_TAR_CONTINUE_INPUT
+  fi
 
-if [ $DISTRO = $CENTOS ] || [ $DISTRO = $CENTOS_STREAM ]; then
-    EFI_BOOT_DIR="/boot/efi/EFI/centos"
-elif [ $DISTRO = $UBUNTU ]; then
-    EFI_BOOT_DIR="/boot/efi/EFI/ubuntu"
-fi
+  if [ ${LARGE_TAR_CONTINUE,,} != 'yes' ]; then
+    echo 'Aborting...'
+    exit 0
+  fi
+}
+create_disk_image(){
+  if [ $DISTRO = $UBUNTU ]; then
+    if [ $UBUNTU_VERSION != "trusty" ]; then
+      apt-get install -yq libguestfs-tools
+    fi
 
-if type grub2-mkconfig > /dev/null 2>&1; then
-    GRUB_MKCONFIG="grub2-mkconfig"
-else
-    GRUB_MKCONFIG="grub-mkconfig"
-fi
+    # Update guestfs appliances (prevent an error with virt-make-fs);
+    # BUG: one package cannot be found (kpartx) and cause update-guestfs-appliance
+    #      to exit with an error code;
+    apt-get -yq update # APT repos may need an update in order to find kpartx
+    apt-get install -yq kpartx
+    if [ "$(which update-guestfs-appliance)" != "" ]; then
+      update-guestfs-appliance || true
+    fi
+  fi
 
-if [ -d /boot/grub2 ]; then
-    GRUB_CFG=/boot/grub2/grub.cfg
-    GRUB_ENV=/boot/grub2/grubenv
-    EXTRA_CMD="&& mkdir -p $EFI_BOOT_DIR && cp $GRUB_CFG $EFI_BOOT_DIR/grub.cfg && cp $GRUB_ENV $EFI_BOOT_DIR/grubenv"
-else
-    GRUB_CFG=/boot/grub/grub.cfg
-fi
+  FS="ext4"
 
-ARCH=$(uname -i)
-case "$ARCH" in
-    "x86_64") GRUB_INSTALL_TARGET="x86_64-efi"
-    ;;
-    "aarch64"|"arm64") GRUB_INSTALL_TARGET="arm64-efi"
-    ;;
-    *)
-        echo "$ARCH unsupported!"
+  [[ -n ${LABEL:-} ]] || {
+    LABEL="$(sudo e2label $(findmnt -t ext4 -J | jq -r ".filesystems[].source" ))"
+    if [ ! -L "/dev/disk/by-label/$LABEL" ]; then
+      LABEL="$(ls -1 /dev/disk/by-label)"
+      if [[ "$(wc -l <<<"$LABEL")" != "1" ]]; then
+        >&2 echo "Unable to auto-detect disk label: found >1 labeled disks:"
+        >&2 echo "$(sed 's/\n/ - /g' <<<"$LABEL")"
+        >&2 echo "Please try again while explicitly setting the LABEL"
+        >&2 echo "env variable to the desired disk label."
         exit 1
-    ;;
-esac
+      fi
+    fi
+  }
 
-extra_options=""
-if [ ! -d $EFI_BOOT_DIR ]; then
-    # This tells the EFI install to put the EFI binaries into
-    # the generic /BOOT directory and avoids trying to update
-    # nvram settings.
-    extra_options="--efi-directory=/boot/efi --target=$GRUB_INSTALL_TARGET --removable && $GRUBNAME /dev/sda"
-else
-    extra_options="/dev/sda"
-fi
+  # Next ensure that the GRUB bootloader is present in the image:
+  EXTRA_CMD=""
 
-filesystem_size=$(du -d 0 -m --exclude-from=$EXCLUDE_FROM / |  awk -F" "  '{ print $1 }')
-total_disk_size=$(($filesystem_size + 1500))
+  GRUBNAME=$(type -p grub-install) || echo "trying grub2-install"
+  if [ -z "$GRUBNAME" ]; then
+      GRUBNAME=$(type -p grub2-install)
+  fi
 
-# 550M for UEFI partition and 8M for BIOS partition
-guestfish -N $CC_SNAPSHOT_CONVERTED_PATH=disk:"$total_disk_size"M -- \
-part-init /dev/sda gpt : \
-part-add /dev/sda primary 2048 1128447 : \
-part-add /dev/sda primary 1128448 1144831 : \
-part-add /dev/sda primary 1144832 -40 : \
-mkfs $FS /dev/sda3 label:$LABEL : \
-mkfs vfat /dev/sda1 label:MKFS_ESP : \
-mount /dev/sda3 / : tar-in $CC_SNAPSHOT_TAR_PATH / : mount /dev/sda1 /boot/efi : \
-sh "parted /dev/sda set 2 bios_grub on" : \
-sh "parted /dev/sda set 1 esp on || true" : \
-sh "$GRUBNAME $extra_options && $GRUB_MKCONFIG -o $GRUB_CFG $EXTRA_CMD"
+  if [ $DISTRO = $CENTOS ] || [ $DISTRO = $CENTOS_STREAM ]; then
+      EFI_BOOT_DIR="/boot/efi/EFI/centos"
+  elif [ $DISTRO = $UBUNTU ]; then
+      EFI_BOOT_DIR="/boot/efi/EFI/ubuntu"
+  fi
+
+  if type grub2-mkconfig > /dev/null 2>&1; then
+      GRUB_MKCONFIG="grub2-mkconfig"
+  else
+      GRUB_MKCONFIG="grub-mkconfig"
+  fi
+
+  if [ -d /boot/grub2 ]; then
+      GRUB_CFG=/boot/grub2/grub.cfg
+      GRUB_ENV=/boot/grub2/grubenv
+      EXTRA_CMD="&& mkdir -p $EFI_BOOT_DIR && cp $GRUB_CFG $EFI_BOOT_DIR/grub.cfg && cp $GRUB_ENV $EFI_BOOT_DIR/grubenv"
+  else
+      GRUB_CFG=/boot/grub/grub.cfg
+  fi
+
+  ARCH=$(uname -i)
+  case "$ARCH" in
+      "x86_64") GRUB_INSTALL_TARGET="x86_64-efi"
+      ;;
+      "aarch64"|"arm64") GRUB_INSTALL_TARGET="arm64-efi"
+      ;;
+      *)
+          echo "$ARCH unsupported!"
+          exit 1
+      ;;
+  esac
+
+  extra_options=""
+  if [ ! -d $EFI_BOOT_DIR ]; then
+      # This tells the EFI install to put the EFI binaries into
+      # the generic /BOOT directory and avoids trying to update
+      # nvram settings.
+      extra_options="--efi-directory=/boot/efi --target=$GRUB_INSTALL_TARGET --removable && $GRUBNAME /dev/sda"
+  else
+      extra_options="/dev/sda"
+  fi
+
+  filesystem_size=$(du -d 0 -m --exclude-from=$EXCLUDE_FROM / |  awk -F" "  '{ print $1 }')
+  total_disk_size=$(($filesystem_size + 1500))
+
+  # 550M for UEFI partition and 8M for BIOS partition
+  guestfish -N $CC_SNAPSHOT_CONVERTED_PATH=disk:"$total_disk_size"M -- \
+  part-init /dev/sda gpt : \
+  part-add /dev/sda primary 2048 1128447 : \
+  part-add /dev/sda primary 1128448 1144831 : \
+  part-add /dev/sda primary 1144832 -40 : \
+  mkfs $FS /dev/sda3 label:$LABEL : \
+  mkfs vfat /dev/sda1 label:MKFS_ESP : \
+  mount /dev/sda3 / : tar-in $CC_SNAPSHOT_TAR_PATH / : mount /dev/sda1 /boot/efi : \
+  sh "parted /dev/sda set 2 bios_grub on" : \
+  sh "parted /dev/sda set 1 esp on || true" : \
+  sh "$GRUBNAME $extra_options && $GRUB_MKCONFIG -o $GRUB_CFG $EXTRA_CMD"
 
 
-# To remove unwanted configuration information from your image, run:
-virt-sysprep -a $CC_SNAPSHOT_CONVERTED_PATH
+  # To remove unwanted configuration information from your image, run:
+  virt-sysprep -a $CC_SNAPSHOT_CONVERTED_PATH
 
-# To complete the preparation of your snapshot image, create a compressed version of it:
-qemu-img convert $CC_SNAPSHOT_CONVERTED_PATH -O $CC_SNAPSHOT_DISK_FORMAT $CC_SNAPSHOT_CONVERTED_COMPRESSED_PATH -c
-
+  # To complete the preparation of your snapshot image, create a compressed version of it:
+  qemu-img convert $CC_SNAPSHOT_CONVERTED_PATH -O $CC_SNAPSHOT_DISK_FORMAT $CC_SNAPSHOT_CONVERTED_COMPRESSED_PATH -c
+}
 ################################
 # Upload the Snapshot on Glance
 ################################
 
 # The final steps are to upload your snapshot image to OpenStack Glance.
-openstack image create \
---disk-format $CC_SNAPSHOT_DISK_FORMAT \
---container-format bare \
-$PROVENANCE_PROPERTIES \
-$SNAPSHOT_NAME <$CC_SNAPSHOT_CONVERTED_COMPRESSED_PATH
+upload_to_glance(){
+  openstack image create \
+  --disk-format $CC_SNAPSHOT_DISK_FORMAT \
+  --container-format bare \
+  $PROVENANCE_PROPERTIES \
+  $SNAPSHOT_NAME <$CC_SNAPSHOT_CONVERTED_COMPRESSED_PATH
+}
+
+install_preequisites
+prepare_tarball
+check_size
+create_disk_image
+upload_to_glance
 
 exit 0

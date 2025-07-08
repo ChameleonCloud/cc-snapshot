@@ -32,21 +32,23 @@ CC_SNAPSHOT_MAX_TARBALL_SIZE=8000
 IGNORE_WARNING=false
 FORCE_YES=false
 SKIP_UPDATE=false
+DRY_RUN=false
 
 print_usage() {
-  echo "usage: $0 [-p] [-e folder_to_exclude] [-u] snapshot_name"
+  echo "usage: $0 [-p] [-e folder_to_exclude] [-d] [-u] snapshot_name"
   echo "Optional arguments:"
   echo ""
   echo "  -h        Print this help message"
   echo "  -e        Exclude folder while snapshotting (can be used multiple times to exclude multiple folders)"
   echo "  -f        Ignore all warnings"
   echo "  -y        Answer 'yes' to all prompts"
+  echo "  -d        Dry run prints each step instead of running snapshot script"
   echo "  -u        Skip the automatic self-update check"
   echo ""
   echo " cc-snapshot version 0.2.0"
 }
 
-while getopts "hpe:fyu" opt; do
+while getopts "hpe:fydu" opt; do
   case $opt in
     h)
       print_usage
@@ -61,6 +63,9 @@ while getopts "hpe:fyu" opt; do
     y)
       FORCE_YES=true
       ;;
+    d)
+      DRY_RUN=true
+      ;;
     u)
       SKIP_UPDATE=true
       ;;
@@ -73,6 +78,15 @@ while getopts "hpe:fyu" opt; do
 done
 
 shift $((OPTIND - 1))
+
+#DRY_RUN helper function 
+run_cmd() {
+  if [[ "$DRY_RUN" == true ]]; then
+    echo "[DRY_RUN] $*"
+  else
+    "$@"
+  fi
+}
 
 ###### Update section ######
 
@@ -232,10 +246,10 @@ else
   OS_AUTH_URL=$(extract_json_key "auth_url_v3" "$JSON_VENDOR_DATA")
 fi
 
-if dmesg | grep -q Hypervisor; then
+if run_cmd dmesg | grep -q Hypervisor; then
   # The current instance is apparently not a baremetal node.
-  >&2 echo "Error: cc-snapshot is only supported for baremetal instances."
-  exit 1
+  >&2 run_cmd echo "Error: cc-snapshot is only supported for baremetal instances."
+  run_cmd exit 1
 fi
 
 export OS_REGION_NAME=$REGION
@@ -259,10 +273,14 @@ set -e
 # Begin the snapshotting process
 #################################
 install_preequisites(){
+  if [[ "$DRY_RUN" == true ]]; then
+    echo "[DRY_RUN] would install_preequisites"
+  fi
+
   if [ $DISTRO = $CENTOS ] && [ $CENTOS_VERSION -eq 7 ]; then
     # Install prerequisite software (only required for XFS file systems, which is the default on CentOS 7):
-    yum install -y libguestfs-xfs
-    yum update -y lvm2 # must be at least 2.02-171 to avoid bug https://bugzilla.redhat.com/show_bug.cgi?id=1475018
+    run_cmd yum install -y libguestfs-xfs
+    run_cmd yum update -y lvm2 # must be at least 2.02-171 to avoid bug https://bugzilla.redhat.com/show_bug.cgi?id=1475018
   fi
 
 
@@ -270,9 +288,9 @@ install_preequisites(){
     # Ensure /boot/efi directory exists and install grub-efi if it doesn't
     if [ ! -d /boot/efi ]; then
       echo "Creating /boot/efi directory..."
-      sudo mkdir -p /boot/efi
+      run_cmd sudo mkdir -p /boot/efi
       echo "Installing grub-efi..."
-      apt-get install -yq grub-efi
+      run_cmd apt-get install -yq grub-efi
     fi
   fi
 }
@@ -288,13 +306,18 @@ prepare_tarball(){
   n=0
   until [ $n -ge 5 ]
   do
-    tar --create --file $CC_SNAPSHOT_TAR_PATH ${TAR_ARGS[@]} / && break
+    run_cmd tar --create --file $CC_SNAPSHOT_TAR_PATH ${TAR_ARGS[@]} / && break
     n=$[$n+1]
     sleep 15
   done
 }
 # Get the size of tar and warn user if exceeds threshold property
 check_size(){ 
+  if [[ "$DRY_RUN" == true ]]; then
+    echo "[DRY_RUN] would check snapshot size at $CC_SNAPSHOT_TAR_PATH"
+      return 0
+  fi
+
   SNAPSHOT_TAR_SIZE=$(($(stat -c %s $CC_SNAPSHOT_TAR_PATH) / 1024 / 1024 ))
   LARGE_TAR_CONTINUE='yes'
   if [ $SNAPSHOT_TAR_SIZE -gt $CC_SNAPSHOT_MAX_TARBALL_SIZE ] && [ "$IGNORE_WARNING" == false ]; then
@@ -312,16 +335,16 @@ check_size(){
 create_disk_image(){
   if [ $DISTRO = $UBUNTU ]; then
     if [ $UBUNTU_VERSION != "trusty" ]; then
-      apt-get install -yq libguestfs-tools
+      run_cmd apt-get install -yq libguestfs-tools
     fi
 
     # Update guestfs appliances (prevent an error with virt-make-fs);
     # BUG: one package cannot be found (kpartx) and cause update-guestfs-appliance
     #      to exit with an error code;
-    apt-get -yq update # APT repos may need an update in order to find kpartx
-    apt-get install -yq kpartx
+    run_cmd apt-get -yq update # APT repos may need an update in order to find kpartx
+    run_cmd apt-get install -yq kpartx
     if [ "$(which update-guestfs-appliance)" != "" ]; then
-      update-guestfs-appliance || true
+      run_cmd update-guestfs-appliance || true
     fi
   fi
 
@@ -395,7 +418,7 @@ create_disk_image(){
   total_disk_size=$(($filesystem_size + 1500))
 
   # 550M for UEFI partition and 8M for BIOS partition
-  guestfish -N $CC_SNAPSHOT_CONVERTED_PATH=disk:"$total_disk_size"M -- \
+  run_cmd guestfish -N $CC_SNAPSHOT_CONVERTED_PATH=disk:"$total_disk_size"M -- \
   part-init /dev/sda gpt : \
   part-add /dev/sda primary 2048 1128447 : \
   part-add /dev/sda primary 1128448 1144831 : \
@@ -409,10 +432,10 @@ create_disk_image(){
 
 
   # To remove unwanted configuration information from your image, run:
-  virt-sysprep -a $CC_SNAPSHOT_CONVERTED_PATH
+  run_cmd virt-sysprep -a $CC_SNAPSHOT_CONVERTED_PATH
 
   # To complete the preparation of your snapshot image, create a compressed version of it:
-  qemu-img convert $CC_SNAPSHOT_CONVERTED_PATH -O $CC_SNAPSHOT_DISK_FORMAT $CC_SNAPSHOT_CONVERTED_COMPRESSED_PATH -c
+  run_cmd qemu-img convert $CC_SNAPSHOT_CONVERTED_PATH -O $CC_SNAPSHOT_DISK_FORMAT $CC_SNAPSHOT_CONVERTED_COMPRESSED_PATH -c
 }
 ################################
 # Upload the Snapshot on Glance
@@ -420,7 +443,7 @@ create_disk_image(){
 
 # The final steps are to upload your snapshot image to OpenStack Glance.
 upload_to_glance(){
-  openstack image create \
+  run_cmd openstack image create \
   --disk-format $CC_SNAPSHOT_DISK_FORMAT \
   --container-format bare \
   $PROVENANCE_PROPERTIES \

@@ -92,7 +92,7 @@ run_cmd() {
 
 #Download latest version, assign versions to variables, curlstat variable ensures update only executes if curl succeeds.
 #------------------------------------------------
-if [[ "$SKIP_UPDATE" == false ]]; then
+if [[ "$SKIP_UPDATE" == false && "$DRY_RUN" == false ]]; then
   echo "Running self-update check"
   SCRIPT=$0
   curl -s -o /tmp/tmp-snap https://raw.githubusercontent.com/ChameleonCloud/cc-snapshot/master/cc-snapshot

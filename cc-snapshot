@@ -246,10 +246,10 @@ else
   OS_AUTH_URL=$(extract_json_key "auth_url_v3" "$JSON_VENDOR_DATA")
 fi
 
-if run_cmd dmesg | grep -q Hypervisor; then
+if dmesg | grep -q Hypervisor; then
   # The current instance is apparently not a baremetal node.
-  >&2 run_cmd echo "Error: cc-snapshot is only supported for baremetal instances."
-  run_cmd exit 1
+  >&2 echo "Error: cc-snapshot is only supported for baremetal instances."
+  exit 1
 fi
 
 export OS_REGION_NAME=$REGION
@@ -272,11 +272,7 @@ set -e
 #################################
 # Begin the snapshotting process
 #################################
-install_preequisites(){
-  if [[ "$DRY_RUN" == true ]]; then
-    echo "[DRY_RUN] would install_preequisites"
-  fi
-
+install_prerequisites(){
   if [ $DISTRO = $CENTOS ] && [ $CENTOS_VERSION -eq 7 ]; then
     # Install prerequisite software (only required for XFS file systems, which is the default on CentOS 7):
     run_cmd yum install -y libguestfs-xfs
@@ -450,7 +446,7 @@ upload_to_glance(){
   $SNAPSHOT_NAME <$CC_SNAPSHOT_CONVERTED_COMPRESSED_PATH
 }
 
-install_preequisites
+install_prerequisites
 prepare_tarball
 check_size
 create_disk_image

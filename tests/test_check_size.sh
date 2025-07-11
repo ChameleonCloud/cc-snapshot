@@ -23,11 +23,10 @@ fi
 
 ### Testing check_size and prepare_tarball
 
-dd if=/dev/zero of=/tmp/fake.tar bs=1M count=10 status=none
+TESTING_SKIP_ROOT_CHECK=1 dd if=/dev/zero of=/tmp/fake.tar bs=1M count=10 status=none
 
 # Run the check_size function and capture its output
-echo "entring to script from test file"
-output=$(echo yes |sudo env \
+output=$(echo yes |TESTING_SKIP_ROOT_CHECK=1 env \
   CC_SNAPSHOT_TAR_PATH=/tmp/fake.tar \
   CC_SNAPSHOT_MAX_TARBALL_SIZE=5 \
   IGNORE_WARNING=false \
@@ -40,5 +39,5 @@ else
   fail "check_size did not detect large snapshot"
 fi
 #clean
-rm -f /tmp/fake.tar
+TESTING_SKIP_ROOT_CHECK=1 rm -f /tmp/fake.tar
 

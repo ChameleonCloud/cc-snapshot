@@ -38,12 +38,23 @@ else
   fail "-e without folder did not fail as expected"
 fi
 
-#test 3: running with an invalid flag (-z)
+#Test 3: running with an invalid flag (-z)
 output=$(TESTING_SKIP_ROOT_CHECK=1 "$CC_SNAPSHOT" -z 2>&1) && status=0 || status=$?
 if [[ $status -ne 0 && "$output" == *"usage:"* ]]; then
   pass "Invalid flag (-z) is handled with error"
 else
   fail "Invalid flag (-z) did not trigger error as expected"
+fi
+
+#Test 4: Dry-run does not error and prints each step
+if output=$(sudo "$CC_SNAPSHOT" -d mytest 2>&1); then
+  if [[ "$output" == *"[DRY_RUN]"* ]]; then
+    pass "Dry-run flag prints steps without error"
+  else
+    fail "Dry-run did not behave as expected"
+  fi
+else
+  fail "Dry-run exited with error: $output"
 fi
 
 echo "All applicable interface tests passed."

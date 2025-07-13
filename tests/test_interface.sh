@@ -48,10 +48,34 @@ fi
 
 #Test 4: Dry-run does not error and prints each step
 if output=$(TESTING_SKIP_ROOT_CHECK=1 "$CC_SNAPSHOT" -d mytest 2>&1); then
-  if [[ "$output" == *"[DRY_RUN]"* ]]; then
-    pass "Dry-run flag prints steps without error"
+  if [[ $? -ne 0 ]]; then
+    fail "Dry-run exited with error: $output"
+  fi
+  expected=(
+    "tar --create"
+    "check snapshot size"
+    "apt-get install -yq libguestfs-tools"
+    "apt-get -yq update"
+    "apt-get install -yq kpartx"
+    "would measure filesystem size"
+    "guestfish"
+    "virt-sysprep"
+    "qemu-img convert"
+    "openstack image create"
+  )
+
+  missing=0
+  for pat in "${expected[@]}"; do
+    if ! grep -q "\[DRY_RUN\].*${pat}" <<<"$output"; then 
+      echo "Missing Dry-run for: $pat" >&2
+      missing=$((missing+1))
+    fi
+  done
+
+  if (( missing > 0 )); then 
+    fail "Dry-run is missing $missing expected steps"
   else
-    fail "Dry-run did not behave as expected"
+    pass "Dry-run printed all ${#expected[@]} steps without error"
   fi
 else
   fail "Dry-run exited with error: $output"

@@ -47,7 +47,7 @@ else
 fi
 
 #Test 4: Dry-run does not error and prints each step
-if output=$(sudo "$CC_SNAPSHOT" -d mytest 2>&1); then
+if output=$(TESTING_SKIP_ROOT_CHECK=1 "$CC_SNAPSHOT" -d mytest 2>&1); then
   if [[ "$output" == *"[DRY_RUN]"* ]]; then
     pass "Dry-run flag prints steps without error"
   else

@@ -51,7 +51,7 @@ print_usage() {
 check_size(){ 
   if [[ "$DRY_RUN" == true ]]; then
     echo "[DRY_RUN] would check snapshot size at $CC_SNAPSHOT_TAR_PATH"
-      return 0
+    return 0
   fi
 
   SNAPSHOT_TAR_SIZE=$(($(stat -c %s $CC_SNAPSHOT_TAR_PATH) / 1024 / 1024 ))

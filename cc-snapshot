@@ -246,8 +246,8 @@ else
   OS_AUTH_URL=$(extract_json_key "auth_url_v3" "$JSON_VENDOR_DATA")
 fi
 
-if  [[ "$DRY_RUN" == true ]]; then 
-  echo "[DRY_RUN] dmesg | grep -q Hypervisor"
+if  [[ -n "${TESTING_SKIP_ROOT_CHECK:-}" ]]; then 
+	echo "Skipping bare-metal check (requires root privileges)"
 else 
   if dmesg | grep -q Hypervisor; then
     echo "Error: cc-snapshot is only supported for baremetal instances." >&2

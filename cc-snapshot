@@ -49,12 +49,15 @@ print_usage() {
 }
 
 check_size(){ 
+  local size_cmd=(stat -c %s $CC_SNAPSHOT_TAR_PATH)
+
+  #Dry_run shows what would run
   if [[ "$DRY_RUN" == true ]]; then
     echo "[DRY_RUN] would check snapshot size at $CC_SNAPSHOT_TAR_PATH"
     return 0
   fi
-
-  SNAPSHOT_TAR_SIZE=$(($(stat -c %s $CC_SNAPSHOT_TAR_PATH) / 1024 / 1024 ))
+  local raw_size=$("${size_cmd[@]}")
+  SNAPSHOT_TAR_SIZE=$(( raw_size / 1024 / 1024 ))
   LARGE_TAR_CONTINUE='yes'
   if [ $SNAPSHOT_TAR_SIZE -gt $CC_SNAPSHOT_MAX_TARBALL_SIZE ] && [ "$IGNORE_WARNING" == false ]; then
     echo "WARNING: snapshot is too large ($SNAPSHOT_TAR_SIZE)! May cause issues."

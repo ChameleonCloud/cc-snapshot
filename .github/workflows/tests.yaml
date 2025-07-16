@@ -15,3 +15,6 @@ jobs:
 
       - name: Run interface tests
         run: ./tests/test_interface.sh
+
+      - name: Run check_size test
+        run: ./tests/test_check_size.sh

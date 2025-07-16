@@ -47,6 +47,9 @@ else
 fi
 
 #Test 4: Dry-run does not error and prints each step
+echo "testing dry_run"
+TESTING_SKIP_ROOT_CHECK=1 "$CC_SNAPSHOT" -d mytest
+echo "return :$?"
 if output=$(TESTING_SKIP_ROOT_CHECK=1 "$CC_SNAPSHOT" -d mytest 2>&1); then
   if [[ $? -ne 0 ]]; then
     fail "Dry-run exited with error: $output"

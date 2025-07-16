@@ -22,11 +22,11 @@ PROVENANCE_FILE='/opt/chameleon/provenance.json'
 # Snapshot disk format
 CC_SNAPSHOT_DISK_FORMAT=qcow2
 # Generated snapshot locations
-CC_SNAPSHOT_TAR_PATH=/tmp/snapshot.tar
 CC_SNAPSHOT_CONVERTED_PATH=/tmp/snapshot.img
 CC_SNAPSHOT_CONVERTED_COMPRESSED_PATH=/tmp/snapshot_compressed.qcow2
 # Max snapshot tarball size (MB) for save upload
-CC_SNAPSHOT_MAX_TARBALL_SIZE=8000
+CC_SNAPSHOT_TAR_PATH="${CC_SNAPSHOT_TAR_PATH:-/tmp/snapshot.tar}"
+CC_SNAPSHOT_MAX_TARBALL_SIZE="${CC_SNAPSHOT_MAX_TARBALL_SIZE:-8000}"
 # ===============================================================================
 
 IGNORE_WARNING=false
@@ -46,6 +46,30 @@ print_usage() {
   echo "  -u        Skip the automatic self-update check"
   echo ""
   echo " cc-snapshot version 0.2.0"
+}
+
+check_size(){ 
+  local size_cmd=(stat -c %s $CC_SNAPSHOT_TAR_PATH)
+
+  #Dry_run shows what would run
+  if [[ "$DRY_RUN" == true ]]; then
+    echo "[DRY_RUN] would check snapshot size at $CC_SNAPSHOT_TAR_PATH"
+    return 0
+  fi
+  local raw_size=$("${size_cmd[@]}")
+  SNAPSHOT_TAR_SIZE=$(( raw_size / 1024 / 1024 ))
+  LARGE_TAR_CONTINUE='yes'
+  if [ $SNAPSHOT_TAR_SIZE -gt $CC_SNAPSHOT_MAX_TARBALL_SIZE ] && [ "$IGNORE_WARNING" == false ]; then
+    echo "WARNING: snapshot is too large ($SNAPSHOT_TAR_SIZE)! May cause issues."
+    echo 'Do you want to continue? (yes/no)'
+    read -r LARGE_TAR_CONTINUE_INPUT
+    export LARGE_TAR_CONTINUE=$LARGE_TAR_CONTINUE_INPUT
+  fi
+
+  if [ ${LARGE_TAR_CONTINUE,,} != 'yes' ]; then
+    echo 'Aborting...'
+    exit 0
+  fi
 }
 
 while getopts "hpe:fydu" opt; do
@@ -78,6 +102,21 @@ while getopts "hpe:fydu" opt; do
 done
 
 shift $((OPTIND - 1))
+#####Testing functions using dummy stage
+
+if [[ -n "${DUMMY_STAGE:-}" ]]; then
+  echo "[DUMMY] Running dummy stage: $DUMMY_STAGE"
+  case "$DUMMY_STAGE" in
+    check_size)
+      check_size
+      exit 0
+      ;;
+    *)
+      echo "[DUMMY] Unknown stage: $DUMMY_STAGE"
+      exit 1
+      ;;
+  esac
+fi
 
 #DRY_RUN helper function 
 run_cmd() {
@@ -308,26 +347,7 @@ prepare_tarball(){
   done
 }
 # Get the size of tar and warn user if exceeds threshold property
-check_size(){ 
-  if [[ "$DRY_RUN" == true ]]; then
-    echo "[DRY_RUN] would check snapshot size at $CC_SNAPSHOT_TAR_PATH"
-      return 0
-  fi
 
-  SNAPSHOT_TAR_SIZE=$(($(stat -c %s $CC_SNAPSHOT_TAR_PATH) / 1024 / 1024 ))
-  LARGE_TAR_CONTINUE='yes'
-  if [ $SNAPSHOT_TAR_SIZE -gt $CC_SNAPSHOT_MAX_TARBALL_SIZE ] && [ "$IGNORE_WARNING" == false ]; then
-    echo "WARNING: snapshot is too large ($SNAPSHOT_TAR_SIZE)! May cause issues."
-    echo 'Do you want to continue? (yes/no)'
-    read -r LARGE_TAR_CONTINUE_INPUT
-    export LARGE_TAR_CONTINUE=$LARGE_TAR_CONTINUE_INPUT
-  fi
-
-  if [ ${LARGE_TAR_CONTINUE,,} != 'yes' ]; then
-    echo 'Aborting...'
-    exit 0
-  fi
-}
 create_disk_image(){
   if [ $DISTRO = $UBUNTU ]; then
     if [ $UBUNTU_VERSION != "trusty" ]; then

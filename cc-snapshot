@@ -459,7 +459,6 @@ upload_to_glance(){
   # perform the upload via stdin redirection
   "${CMD[@]}" < "$CC_SNAPSHOT_CONVERTED_COMPRESSED_PATH"
 }
-run_cmd check_hypervisor
 install_prerequisites
 prepare_tarball
 check_size

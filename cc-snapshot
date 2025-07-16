@@ -246,10 +246,13 @@ else
   OS_AUTH_URL=$(extract_json_key "auth_url_v3" "$JSON_VENDOR_DATA")
 fi
 
-if run_cmd "dmesg | grep -q Hypervisor"; then
-  # The current instance is apparently not a baremetal node.
-  >&2 run_cmd echo "Error: cc-snapshot is only supported for baremetal instances."
-  run_cmd exit 1
+if  [[ "$DRY_RUN" == true ]]; then 
+  echo "[DRY_RUN] dmesg | grep -q Hypervisor"
+else 
+  if dmesg | grep -q Hypervisor; then
+    echo "Error: cc-snapshot is only supported for baremetal instances." >&2
+    exit 1
+  fi
 fi
 
 export OS_REGION_NAME=$REGION
@@ -346,13 +349,14 @@ create_disk_image(){
 
   FS="ext4"
 
- # dry-run stub for filesystem sizing
+  du_cmd=(du -d 0 -m --exclude-from="$EXCLUDE_FROM" /)
+  #dry-run stub for filesystem sizing
   if [[ "$DRY_RUN" == true ]]; then
-    echo "[DRY_RUN] would measure filesystem size with: du -d 0 -m --exclude-from=$EXCLUDE_FROM /"
+    echo "[DRY_RUN] would measure filesystem size with:${du_cmd[*]} | awk '{print \$1}'"
     filesystem_size=0
     total_disk_size=1500
   else
-    filesystem_size=$(du -d 0 -m --exclude-from="$EXCLUDE_FROM" / | awk '{print $1}')
+    filesystem_size=$("${du_cmd[@]}" | awk '{print $1}')
     total_disk_size=$((filesystem_size + 1500))
   fi
 
@@ -419,10 +423,6 @@ create_disk_image(){
   else
       extra_options="/dev/sda"
   fi
-
-#  filesystem_size=$(du -d 0 -m --exclude-from=$EXCLUDE_FROM / |  awk -F" "  '{ print $1 }')
-#  total_disk_size=$(($filesystem_size + 1500))
-
   # 550M for UEFI partition and 8M for BIOS partition
   run_cmd guestfish -N $CC_SNAPSHOT_CONVERTED_PATH=disk:"$total_disk_size"M -- \
   part-init /dev/sda gpt : \
@@ -443,19 +443,23 @@ create_disk_image(){
   # To complete the preparation of your snapshot image, create a compressed version of it:
   run_cmd qemu-img convert $CC_SNAPSHOT_CONVERTED_PATH -O $CC_SNAPSHOT_DISK_FORMAT $CC_SNAPSHOT_CONVERTED_COMPRESSED_PATH -c
 }
+
 ################################
 # Upload the Snapshot on Glance
 ################################
-
-# The final steps are to upload your snapshot image to OpenStack Glance.
 upload_to_glance(){
-  run_cmd openstack image create \
-  --disk-format $CC_SNAPSHOT_DISK_FORMAT \
-  --container-format bare \
-  $PROVENANCE_PROPERTIES \
-  $SNAPSHOT_NAME <$CC_SNAPSHOT_CONVERTED_COMPRESSED_PATH
-}
+  # build the command once
+  local CMD=(openstack image create --disk-format "$CC_SNAPSHOT_DISK_FORMAT" \
+              --container-format bare $PROVENANCE_PROPERTIES "$SNAPSHOT_NAME")
+  if [[ "$DRY_RUN" == true ]]; then
+    echo "[DRY_RUN] ${CMD[*]} < $CC_SNAPSHOT_CONVERTED_COMPRESSED_PATH"
+    return 0
+  fi
 
+  # perform the upload via stdin redirection
+  "${CMD[@]}" < "$CC_SNAPSHOT_CONVERTED_COMPRESSED_PATH"
+}
+run_cmd check_hypervisor
 install_prerequisites
 prepare_tarball
 check_size

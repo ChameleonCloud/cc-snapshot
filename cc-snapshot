@@ -247,7 +247,7 @@ else
 fi
 
 if  [[ -n "${TESTING_SKIP_ROOT_CHECK:-}" ]]; then 
-	echo "Skipping bare-metal check (requires root privileges)"
+  echo "Skipping bare-metal check (requires root privileges)"
 else 
   if dmesg | grep -q Hypervisor; then
     echo "Error: cc-snapshot is only supported for baremetal instances." >&2

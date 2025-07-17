@@ -33,9 +33,10 @@ IGNORE_WARNING=false
 FORCE_YES=false
 SKIP_UPDATE=false
 DRY_RUN=false
+SOURCE_DIR="/"
 
 print_usage() {
-  echo "usage: $0 [-p] [-e folder_to_exclude] [-d] [-u] snapshot_name"
+  echo "usage: $0 [-p] [-e folder_to_exclude] [-d] [-u] [-s source_dir] snapshot_name"
   echo "Optional arguments:"
   echo ""
   echo "  -h        Print this help message"
@@ -44,6 +45,7 @@ print_usage() {
   echo "  -y        Answer 'yes' to all prompts"
   echo "  -d        Dry run prints each step instead of running snapshot script"
   echo "  -u        Skip the automatic self-update check"
+  echo "  -s        Specify any path other than root for snapshoting"
   echo ""
   echo " cc-snapshot version 0.2.0"
 }
@@ -72,7 +74,7 @@ check_size(){
   fi
 }
 
-while getopts "hpe:fydu" opt; do
+while getopts "hpe:fydus:" opt; do
   case $opt in
     h)
       print_usage
@@ -93,6 +95,13 @@ while getopts "hpe:fydu" opt; do
     u)
       SKIP_UPDATE=true
       ;;
+    s)
+      SOURCE_DIR=$(realpath -e "$OPTARG") || {
+        echo "ERROR: Specified source directory '$OPTARG' does not exist or isn’t accessible." >&2
+        exit 1
+      }
+      SOURCE_DIR=${SOURCE_DIR%/}
+      ;;
     \?)
       echo "Invalid option: -$OPTARG" >&2
       print_usage
@@ -102,6 +111,10 @@ while getopts "hpe:fydu" opt; do
 done
 
 shift $((OPTIND - 1))
+
+echo "Snapshotting from directory: $SOURCE_DIR"
+echo "Creating snapshot named '$SNAPSHOT_NAME'"
+
 #####Testing functions using dummy stage
 
 if [[ -n "${DUMMY_STAGE:-}" ]]; then

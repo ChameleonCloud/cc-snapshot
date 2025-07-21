@@ -1,5 +1,5 @@
 #!/bin/bash
-
+#set -euo pipefail
 if [[ $EUID -ne 0 && -z ${TESTING_SKIP_ROOT_CHECK} ]]; then
    echo "This script must be run as root"
    exit 1
@@ -50,6 +50,7 @@ print_usage() {
   echo " cc-snapshot version 0.2.0"
 }
 
+# Get the size of tar and warn user if exceeds threshold property
 check_size(){ 
   local size_cmd=(stat -c %s $CC_SNAPSHOT_TAR_PATH)
 
@@ -110,10 +111,9 @@ while getopts "hpe:fydus:" opt; do
   esac
 done
 
-shift $((OPTIND - 1))
-
+#shift $((OPTIND - 1))
+SOURCE_DIR="${SOURCE_DIR:-/}"
 echo "Snapshotting from directory: $SOURCE_DIR"
-echo "Creating snapshot named '$SNAPSHOT_NAME'"
 
 #####Testing functions using dummy stage
 
@@ -177,11 +177,9 @@ else
   echo "Skipping self update that was disabled."
 fi
 ###### Update section end ######
-
 ###### Check openstackclient version ######
 ## each separate version number must be less than 3 digit wide !
 function version { echo "$@" | gawk -F. '{ printf("%03d%03d%03d\n", $1,$2,$3); }'; }
-
 openstackclient_version=$(echo $(openstack --version 2>/dev/null) | awk -F" " '{ print $2}')
 if [ "$(version "$openstackclient_version")" -lt "$(version "3.16.0")" ]; then
   echo "The openstack client version is too old; please run 'sudo pip install python-openstackclient --upgrade' to update"
@@ -217,7 +215,10 @@ else
   SNAPSHOT_NAME="$1"
 fi
 
+CC_SNAPSHOT_TAR_PATH="${PWD}/${SNAPSHOT_NAME}.tar"
+
 echo "Will snapshot the instance using the following name: '$SNAPSHOT_NAME'"
+
 if [ -n "${EXCLUDE_FOLDERS+x}" ]; then
   for folder in "${EXCLUDE_FOLDERS[@]}"; do
     echo "Will exclude folder: $folder"
@@ -228,7 +229,7 @@ fi
 # for exclusion. Empty lines are OK. Commented lines technically are interpreted
 # as a file, but they shouldn't match anything.
 EXCLUDE_FROM="$(mktemp)"
-cat >$EXCLUDE_FROM <<EOF
+cat >"$EXCLUDE_FROM" <<EOF
 # Temp
 /tmp/*
 /var/tmp/*
@@ -244,13 +245,22 @@ cat >$EXCLUDE_FROM <<EOF
 # Ubuntu lxcfs
 /var/lib/lxcfs
 # User excludes
-$(printf "%s\n" "${EXCLUDE_FOLDERS[@]:-}")
 EOF
+for folder in "${EXCLUDE_FOLDERS[@]:-}"; do
+  # strip $SOURCE_DIR/ so tar will match it under -C
+  rel="${folder#$SOURCE_DIR/}"
+  printf "%s\n" "$rel"
+done >>"$EXCLUDE_FROM"
+
+echo "––– exclude‐from patterns: –––"
+cat "$EXCLUDE_FROM"
+echo "–––––––––––––––––––––––––––"
 
 DISTRO=$(gawk -F= '/^NAME/{print $2}' /etc/os-release | tr -d \"\' | tr ' ' '-')
 UBUNTU='Ubuntu'
 CENTOS='CentOS-Linux'
 CENTOS_STREAM='CentOS-Stream'
+#$(printf "%s\n" "${EXCLUDE_FOLDERS[@]:-}")
 
 UBUNTU_VERSION=''
 if [ $DISTRO = $UBUNTU ]; then
@@ -357,12 +367,11 @@ prepare_tarball(){
   n=0
   until [ $n -ge 5 ]
   do
-    run_cmd tar --create --file $CC_SNAPSHOT_TAR_PATH ${TAR_ARGS[@]} / && break
+    run_cmd tar --create --file $CC_SNAPSHOT_TAR_PATH ${TAR_ARGS[@]} -C "$SOURCE_DIR" . && break
     n=$[$n+1]
     sleep 15
   done
 }
-# Get the size of tar and warn user if exceeds threshold property
 
 create_disk_image(){
   if [ $DISTRO = $UBUNTU ]; then
@@ -495,6 +504,11 @@ upload_to_glance(){
 install_prerequisites
 prepare_tarball
 check_size
+# if source path is other than root
+if [[ "$SOURCE_DIR" != "/" ]]; then
+  echo "Tarball of $SOURCE_DIR is ready at $CC_SNAPSHOT_TAR_PATH"
+  exit 0
+fi
 create_disk_image
 upload_to_glance
 

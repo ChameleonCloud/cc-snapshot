@@ -33,9 +33,8 @@ echo "world" > /tmp/cc_test/src/subdir/file2.txt
 echo "remove_me" > /tmp/cc_test/src/remove_me.txt
 
 #Test 1: basic directory snapshot
-echo "Invoking basic snapshot..."
 if output=$(TESTING_SKIP_ROOT_CHECK=1 "$CC_SNAPSHOT" -u -s /tmp/cc_test/src mytest 2>&1); then
-  echo "$output"
+  pass "running basic directory snapshot"
 else
   echo "$output"
   fail "cc-snapshot failed for basic snapshot"
@@ -54,7 +53,6 @@ fi
 pass "Basic tarball created at $TARFILE_BASIC"
 
 #Compare all contents (including removed file)
-echo "Comparing contents of basic tarball..."
 diff \
   <(cd /tmp/cc_test/src && find . -mindepth 1 | sed 's|^\./||; s|/$||' | sort) \
   <(tar -tf "$TARFILE_BASIC" | sed 's|^\./||; s|/$||' | grep -v '^$' | sort) \
@@ -64,9 +62,8 @@ pass "Basic tarball content matches source directory"
 rm -f "$TARFILE_BASIC"
 
 # Test 2: test -e fage 
-echo "Invoking exclusion snapshot..."
 if output=$(TESTING_SKIP_ROOT_CHECK=1 "$CC_SNAPSHOT" -u -s /tmp/cc_test/src -e /tmp/cc_test/src/remove_me.txt exclude_test 2>&1); then
-  echo "$output"
+  pass "running basic directory snapshot with -e flag"
 else
   echo "$output"
   fail "cc-snapshot failed for exclusion snapshot"
@@ -90,10 +87,11 @@ if tar -tf "$TARFILE_EXCL" | grep -q "remove_me.txt"; then
 fi
 pass "Excluded file correctly omitted"
 
-# Validate only keep files present
-echo "Comparing contents of exclusion tarball..."
-EXPECTED=$(printf "file1.txt\nsubdir/file2.txt\n" | sort)
-ACTUAL=$(tar -tf "$TARFILE_EXCL" | sed 's|^\./||; s|/$||' | sort)
+#Validate only keep files present
+EXPECTED=$(printf "file1.txt\nsubdir\nsubdir/file2.txt\n" | sort)
+ACTUAL=$(tar -tf "$TARFILE_EXCL" | sed 's|^\./||; s|/$||' \
+    | grep -v '^$' \
+    | sort )
 if [[ "$EXPECTED" != "$ACTUAL" ]]; then
   echo "Expected files:" >&2
   echo "$EXPECTED" >&2
@@ -101,8 +99,6 @@ if [[ "$EXPECTED" != "$ACTUAL" ]]; then
   echo "$ACTUAL" >&2
   fail "Unexpected entries in exclusion tarball"
 fi
-pass "Exclusion tarball content matches expected"
-
 # Cleanup
 rm -rf /tmp/cc_test
 rm -f /home/cc/Z-cc-snapshot/tests/mytest.tar /home/cc/Z-cc-snapshot/tests/exclude_test.tar

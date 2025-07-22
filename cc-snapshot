@@ -252,10 +252,6 @@ for folder in "${EXCLUDE_FOLDERS[@]:-}"; do
   printf "%s\n" "$rel"
 done >>"$EXCLUDE_FROM"
 
-echo "––– exclude‐from patterns: –––"
-cat "$EXCLUDE_FROM"
-echo "–––––––––––––––––––––––––––"
-
 DISTRO=$(gawk -F= '/^NAME/{print $2}' /etc/os-release | tr -d \"\' | tr ' ' '-')
 UBUNTU='Ubuntu'
 CENTOS='CentOS-Linux'

@@ -80,75 +80,76 @@ if output=$(TESTING_SKIP_ROOT_CHECK=1 "$CC_SNAPSHOT" -d mytest 2>&1); then
 else
   fail "Dry-run exited with error: $output"
 fi
+# Srart of custom source path tests
 
-rm -f /home/cc/Z-cc-snapshot/tests/mytest.tar
-rm -f /home/cc/Z-cc-snapshot/tests/exclude_test.tar
-rm -rf /tmp/cc_test
+export CC_SNAPSHOT_TAR_PATH="${PWD}/snapshot.tar"
+DEFAULT_TAR="${PWD}/snapshot.tar"
+TESTDIR="/tmp/cc_test"
 
-#prepare a single test directory with files
-mkdir -p /tmp/cc_test/src/subdir
-echo "hello" > /tmp/cc_test/src/file1.txt
-echo "world" > /tmp/cc_test/src/subdir/file2.txt
-echo "remove_me" > /tmp/cc_test/src/remove_me.txt
+rm -f "$DEFAULT_TAR"
+rm -rf "$TESTDIR"
+
+mkdir -p "$TESTDIR/src/subdir"
+echo hello > "$TESTDIR/src/file1.txt"
+echo world > "$TESTDIR/src/subdir/file2.txt"
+echo remove_me > "$TESTDIR/src/remove_me.txt"
 
 #Test 5: basic directory snapshot
-if output=$(TESTING_SKIP_ROOT_CHECK=1 "$CC_SNAPSHOT" -u -s /tmp/cc_test/src mytest 2>&1); then
-  pass "running basic directory snapshot"
+if output=$(TESTING_SKIP_ROOT_CHECK=1 "$CC_SNAPSHOT" -u -s "$TESTDIR/src" mytest 2>&1); then
+  pass "ran basic directory snapshot"
 else
   echo "$output"
   fail "cc-snapshot failed for basic snapshot"
 fi
 
-#verify directory created
-if [[ "$output" != *"Tarball of /tmp/cc_test/src is ready at"* ]]; then
-  fail "Missing success message for basic snapshot"
+# Verify directory created
+if [[ "$output" != *"Tarball of $TESTDIR/src is ready at $DEFAULT_TAR"* ]]; then
+  fail "Missing success message for $DEFAULT_TAR"
 fi
 
-TARFILE_BASIC="/home/cc/Z-cc-snapshot/tests/mytest.tar"
-#verify the tarball exists
-if [[ ! -s "$TARFILE_BASIC" ]]; then
-  fail "Expected tarball $TARFILE_BASIC to exist and be non-zero size"
+# Verify the tarball exists
+if [[ ! -s "$DEFAULT_TAR" ]]; then
+  fail "Expected tarball $DEFAULT_TAR to exist and be non-zero size"
 fi
-pass "Basic tarball created at $TARFILE_BASIC"
+pass "Basic tarball created at $DEFAULT_TAR"
 
-#Compare all contents (including removed file)
+# Compare all contents (including removed file)
 diff \
-  <(cd /tmp/cc_test/src && find . -mindepth 1 | sed 's|^\./||; s|/$||' | sort) \
-  <(tar -tf "$TARFILE_BASIC" | sed 's|^\./||; s|/$||' | grep -v '^$' | sort) \
+  <(cd "$TESTDIR/src" && find . -mindepth 1 | sed 's|^\./||; s|/$||' | sort) \
+  <(tar -tf "$DEFAULT_TAR" | sed 's|^\./||; s|/$||' | grep -v '^$' | sort) \
   || fail "Contents mismatch for basic snapshot"
 pass "Basic tarball content matches source directory"
 
-rm -f "$TARFILE_BASIC"
+rm -f "$DEFAULT_TAR"
 
 # Test 6: test -e fage
-if output=$(TESTING_SKIP_ROOT_CHECK=1 "$CC_SNAPSHOT" -u -s /tmp/cc_test/src -e /tmp/cc_test/src/remove_me.txt exclude_test 2>&1); then
+if output=$(TESTING_SKIP_ROOT_CHECK=1 "$CC_SNAPSHOT" -u -s $TESTDIR/src -e $TESTDIR/src/remove_me.txt exclude_test 2>&1); then
   pass "running basic directory snapshot with -e flag"
 else
   echo "$output"
   fail "cc-snapshot failed for exclusion snapshot"
 fi
 
-#verify creation message for exclusion
-if [[ "$output" != *"Tarball of /tmp/cc_test/src is ready at"* ]]; then
+# Verify creation message for exclusion
+if [[ "$output" != *"Tarball of $TESTDIR/src is ready at $DEFAULT_TAR"* ]]; then
   fail "Missing success message for exclusion snapshot"
 fi
 
-TARFILE_EXCL="/home/cc/Z-cc-snapshot/tests/exclude_test.tar"
-#Verify the tarball exists
-if [[ ! -s "$TARFILE_EXCL" ]]; then
-  fail "Expected tarball $TARFILE_EXCL to exist and be non-zero size"
+# Verify the tarball exists
+if [[ ! -s "$DEFAULT_TAR" ]]; then
+  fail "Expected tarball $DEFAULT_TAR to exist and be non-zero size"
 fi
-pass "Exclusion tarball created at $TARFILE_EXCL"
+pass "Exclusion tarball created at $DEFAULT_TAR"
 
-#Ensure 'remove_me.txt' is not present
-if tar -tf "$TARFILE_EXCL" | grep -q "remove_me.txt"; then
+# Ensure 'remove_me.txt' is not present
+if tar -tf "$DEFAULT_TAR" | grep -q "remove_me.txt"; then
   fail "Excluded file 'remove_me.txt' found in tarball"
 fi
 pass "Excluded file correctly omitted"
 
-#Validate only keep files present
+# Validate only keep files present
 EXPECTED=$(printf "file1.txt\nsubdir\nsubdir/file2.txt\n" | sort)
-ACTUAL=$(tar -tf "$TARFILE_EXCL" | sed 's|^\./||; s|/$||' \
+ACTUAL=$(tar -tf "$DEFAULT_TAR" | sed 's|^\./||; s|/$||' \
     | grep -v '^$' \
     | sort )
 if [[ "$EXPECTED" != "$ACTUAL" ]]; then
@@ -161,7 +162,7 @@ fi
 pass "Exclusion tarball content matches expected"
 
 # Cleanup
-rm -rf /tmp/cc_test
-rm -f /home/cc/Z-cc-snapshot/tests/mytest.tar /home/cc/Z-cc-snapshot/tests/exclude_test.tar
+rm -rf "$TESTDIR"
+rm -f "$DEFAULT_TAR"
 
 echo "All applicable interface tests passed."

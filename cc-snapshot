@@ -113,7 +113,6 @@ done
 
 #shift $((OPTIND - 1))
 SOURCE_DIR="${SOURCE_DIR:-/}"
-echo "Snapshotting from directory: $SOURCE_DIR"
 
 #####Testing functions using dummy stage
 
@@ -229,19 +228,19 @@ fi
 EXCLUDE_FROM="$(mktemp)"
 cat >"$EXCLUDE_FROM" <<EOF
 # Temp
-/tmp/*
-/var/tmp/*
+tmp/*
+var/tmp/*
 # Instance-specific
-/proc/*
-/boot/extlinux
-/var/lib/cloud
+proc/*
+boot/extlinux
+var/lib/cloud
 # Sockets
-/var/lib/gssproxy/*.sock
-/var/spool/postfix
+var/lib/gssproxy/*.sock
+var/spool/postfix
 # Swift cloudfuse mount
-/home/cc/my_mounting_point
+home/cc/my_mounting_point
 # Ubuntu lxcfs
-/var/lib/lxcfs
+var/lib/lxcfs
 # User excludes
 EOF
 

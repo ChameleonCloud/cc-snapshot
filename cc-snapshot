@@ -1,5 +1,4 @@
 #!/bin/bash
-#set -euo pipefail
 if [[ $EUID -ne 0 && -z ${TESTING_SKIP_ROOT_CHECK} ]]; then
    echo "This script must be run as root"
    exit 1
@@ -111,8 +110,8 @@ while getopts "hpe:fydus:" opt; do
   esac
 done
 
-#shift $((OPTIND - 1))
-SOURCE_DIR="${SOURCE_DIR:-/}"
+shift $((OPTIND - 1))
+SiOURCE_DIR="${SOURCE_DIR:-/}"
 
 #####Testing functions using dummy stage
 
@@ -202,8 +201,6 @@ fi
 
 set -eu
 set -o pipefail
-
-shift $((OPTIND-1))
 
 HOSTNAME=$(hostname)
 UUID=$(uuidgen)

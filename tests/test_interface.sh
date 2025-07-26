@@ -80,14 +80,22 @@ if output=$(TESTING_SKIP_ROOT_CHECK=1 "$CC_SNAPSHOT" -d mytest 2>&1); then
 else
   fail "Dry-run exited with error: $output"
 fi
-# Srart of custom source path tests
 
-export CC_SNAPSHOT_TAR_PATH="${PWD}/snapshot.tar"
-DEFAULT_TAR="${PWD}/snapshot.tar"
-TESTDIR="/tmp/cc_test"
+# Start of custom source path tests
+TESTDIR=$(mktemp -d /tmp/cc_test.XXXXXX)
 
-rm -f "$DEFAULT_TAR"
-rm -rf "$TESTDIR"
+export CC_SNAPSHOT_TAR_PATH=(mktemp "${PWD}/snapshot.XXXXXX.tar")
+DEFAULT_TAR="$CC_SNAPSHOT_TAR_PATH"
+
+[[ "$TESTDIR"  == /tmp/cc_test.* ]] || { echo "Unsafe TESTDIR: $TESTDIR"; exit 1; }
+[[ "$DEFAULT_TAR" == "${PWD}/snapshot."*".tar" ]] || { echo "Unsafe snapshot path: $DEFAULT_TAR"; exit 1; }
+
+cleanup() {
+  rm -rf "$TESTDIR"
+  rm -f   "$DEFAULT_TAR"
+}
+#trap will make sure to run cleanup before exiting
+trap cleanup EXIT
 
 mkdir -p "$TESTDIR/src/subdir"
 echo hello > "$TESTDIR/src/file1.txt"
@@ -160,9 +168,5 @@ if [[ "$EXPECTED" != "$ACTUAL" ]]; then
   fail "Unexpected entries in exclusion tarball"
 fi
 pass "Exclusion tarball content matches expected"
-
-# Cleanup
-rm -rf "$TESTDIR"
-rm -f "$DEFAULT_TAR"
 
 echo "All applicable interface tests passed."

@@ -269,7 +269,7 @@ fi
 
 # Configure env for glance to upload image
 # try vendordata2.json first and fallback to vendordata.json if empty
-if [[ "$DRY_RUN" != true ]]; then
+if [[ "$DRY_RUN" != true && "$SOURCE_DIR" == "/" ]]; then
   JSON_VENDOR_DATA=$(curl -s $OPENSTACK_VENDOR_DATA_2)
   NEW_VENDOR_DATA=true
   if [ "$JSON_VENDOR_DATA" = '{}' ]; then

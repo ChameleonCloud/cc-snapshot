@@ -1,5 +1,4 @@
 #!/bin/bash
-
 if [[ $EUID -ne 0 && -z ${TESTING_SKIP_ROOT_CHECK} ]]; then
    echo "This script must be run as root"
    exit 1
@@ -33,9 +32,10 @@ IGNORE_WARNING=false
 FORCE_YES=false
 SKIP_UPDATE=false
 DRY_RUN=false
+SOURCE_DIR="/"
 
 print_usage() {
-  echo "usage: $0 [-p] [-e folder_to_exclude] [-d] [-u] snapshot_name"
+  echo "usage: $0 [-p] [-e folder_to_exclude] [-d] [-u] [-s source_dir] snapshot_name"
   echo "Optional arguments:"
   echo ""
   echo "  -h        Print this help message"
@@ -44,10 +44,12 @@ print_usage() {
   echo "  -y        Answer 'yes' to all prompts"
   echo "  -d        Dry run prints each step instead of running snapshot script"
   echo "  -u        Skip the automatic self-update check"
+  echo "  -s        Specify any path other than root for snapshoting"
   echo ""
   echo " cc-snapshot version 0.2.0"
 }
 
+# Get the size of tar and warn user if exceeds threshold property
 check_size(){ 
   local size_cmd=(stat -c %s $CC_SNAPSHOT_TAR_PATH)
 
@@ -72,7 +74,7 @@ check_size(){
   fi
 }
 
-while getopts "hpe:fydu" opt; do
+while getopts "hpe:fydus:" opt; do
   case $opt in
     h)
       print_usage
@@ -93,6 +95,13 @@ while getopts "hpe:fydu" opt; do
     u)
       SKIP_UPDATE=true
       ;;
+    s)
+      SOURCE_DIR=$(realpath -e "$OPTARG") || {
+        echo "ERROR: Specified source directory '$OPTARG' does not exist or isn’t accessible." >&2
+        exit 1
+      }
+      SOURCE_DIR=${SOURCE_DIR%/}
+      ;;
     \?)
       echo "Invalid option: -$OPTARG" >&2
       print_usage
@@ -102,6 +111,8 @@ while getopts "hpe:fydu" opt; do
 done
 
 shift $((OPTIND - 1))
+SiOURCE_DIR="${SOURCE_DIR:-/}"
+
 #####Testing functions using dummy stage
 
 if [[ -n "${DUMMY_STAGE:-}" ]]; then
@@ -164,11 +175,9 @@ else
   echo "Skipping self update that was disabled."
 fi
 ###### Update section end ######
-
 ###### Check openstackclient version ######
 ## each separate version number must be less than 3 digit wide !
 function version { echo "$@" | gawk -F. '{ printf("%03d%03d%03d\n", $1,$2,$3); }'; }
-
 openstackclient_version=$(echo $(openstack --version 2>/dev/null) | awk -F" " '{ print $2}')
 if [ "$(version "$openstackclient_version")" -lt "$(version "3.16.0")" ]; then
   echo "The openstack client version is too old; please run 'sudo pip install python-openstackclient --upgrade' to update"
@@ -193,8 +202,6 @@ fi
 set -eu
 set -o pipefail
 
-shift $((OPTIND-1))
-
 HOSTNAME=$(hostname)
 UUID=$(uuidgen)
 
@@ -205,6 +212,7 @@ else
 fi
 
 echo "Will snapshot the instance using the following name: '$SNAPSHOT_NAME'"
+
 if [ -n "${EXCLUDE_FOLDERS+x}" ]; then
   for folder in "${EXCLUDE_FOLDERS[@]}"; do
     echo "Will exclude folder: $folder"
@@ -215,24 +223,29 @@ fi
 # for exclusion. Empty lines are OK. Commented lines technically are interpreted
 # as a file, but they shouldn't match anything.
 EXCLUDE_FROM="$(mktemp)"
-cat >$EXCLUDE_FROM <<EOF
+cat >"$EXCLUDE_FROM" <<EOF
 # Temp
-/tmp/*
-/var/tmp/*
+tmp/*
+var/tmp/*
 # Instance-specific
-/proc/*
-/boot/extlinux
-/var/lib/cloud
+proc/*
+boot/extlinux
+var/lib/cloud
 # Sockets
-/var/lib/gssproxy/*.sock
-/var/spool/postfix
+var/lib/gssproxy/*.sock
+var/spool/postfix
 # Swift cloudfuse mount
-/home/cc/my_mounting_point
+home/cc/my_mounting_point
 # Ubuntu lxcfs
-/var/lib/lxcfs
+var/lib/lxcfs
 # User excludes
-$(printf "%s\n" "${EXCLUDE_FOLDERS[@]:-}")
 EOF
+
+for folder in "${EXCLUDE_FOLDERS[@]:-}"; do
+  # strip $SOURCE_DIR/ so tar will match it under -C
+  rel="${folder#$SOURCE_DIR/}"
+  printf "%s\n" "$rel"
+done >>"$EXCLUDE_FROM"
 
 DISTRO=$(gawk -F= '/^NAME/{print $2}' /etc/os-release | tr -d \"\' | tr ' ' '-')
 UBUNTU='Ubuntu'
@@ -256,60 +269,64 @@ fi
 
 # Configure env for glance to upload image
 # try vendordata2.json first and fallback to vendordata.json if empty
-JSON_VENDOR_DATA=$(curl -s $OPENSTACK_VENDOR_DATA_2)
-NEW_VENDOR_DATA=true
-if [ "$JSON_VENDOR_DATA" = '{}' ]; then
-  JSON_VENDOR_DATA=$(curl -s $OPENSTACK_VENDOR_DATA)
-  NEW_VENDOR_DATA=false
-fi
-
-if hash jq 2>/dev/null; then
-  if $NEW_VENDOR_DATA; then
-    JSON_VENDOR_DATA=$(echo $JSON_VENDOR_DATA | jq -r .chameleon)
+if [[ "$DRY_RUN" != true && "$SOURCE_DIR" == "/" ]]; then
+  JSON_VENDOR_DATA=$(curl -s $OPENSTACK_VENDOR_DATA_2)
+  NEW_VENDOR_DATA=true
+  if [ "$JSON_VENDOR_DATA" = '{}' ]; then
+    JSON_VENDOR_DATA=$(curl -s $OPENSTACK_VENDOR_DATA)
+    NEW_VENDOR_DATA=false
   fi
-  SITE=$(echo $JSON_VENDOR_DATA | jq -r .site)
-  REGION=$(echo $JSON_VENDOR_DATA | jq -r .region)
-  PROJECT_ID=$(echo $JSON_VENDOR_DATA | jq -r .project_id)
-  TOKEN=$(echo $JSON_VENDOR_DATA | jq -r .service_token)
-  OS_AUTH_URL=$(echo $JSON_VENDOR_DATA | jq -r .auth_url_v3)
-else
-  # jq not available
-  function extract_json_key {
-    RESULT=$(echo "$2" | sed "s/.*$1\": \"//g" | sed 's/".*//g')
-    echo "$RESULT"
-  }
-  SITE=$(extract_json_key "site" "$JSON_VENDOR_DATA")
-  REGION=$(extract_json_key "region" "$JSON_VENDOR_DATA")
-  PROJECT_ID=$(extract_json_key "project_id" "$JSON_VENDOR_DATA")
-  TOKEN=$(extract_json_key "service_token" "$JSON_VENDOR_DATA")
-  OS_AUTH_URL=$(extract_json_key "auth_url_v3" "$JSON_VENDOR_DATA")
-fi
 
-if  [[ -n "${TESTING_SKIP_ROOT_CHECK:-}" ]]; then 
-  echo "Skipping bare-metal check (requires root privileges)"
-else 
-  if dmesg | grep -q Hypervisor; then
-    echo "Error: cc-snapshot is only supported for baremetal instances." >&2
+  if hash jq 2>/dev/null; then
+    if $NEW_VENDOR_DATA; then
+      JSON_VENDOR_DATA=$(echo $JSON_VENDOR_DATA | jq -r .chameleon)
+    fi
+    SITE=$(echo $JSON_VENDOR_DATA | jq -r .site)
+    REGION=$(echo $JSON_VENDOR_DATA | jq -r .region)
+    PROJECT_ID=$(echo $JSON_VENDOR_DATA | jq -r .project_id)
+    TOKEN=$(echo $JSON_VENDOR_DATA | jq -r .service_token)
+    OS_AUTH_URL=$(echo $JSON_VENDOR_DATA | jq -r .auth_url_v3)
+  else
+    # jq not available
+    function extract_json_key {
+      RESULT=$(echo "$2" | sed "s/.*$1\": \"//g" | sed 's/".*//g')
+      echo "$RESULT"
+    }
+    SITE=$(extract_json_key "site" "$JSON_VENDOR_DATA")
+    REGION=$(extract_json_key "region" "$JSON_VENDOR_DATA")
+    PROJECT_ID=$(extract_json_key "project_id" "$JSON_VENDOR_DATA")
+    TOKEN=$(extract_json_key "service_token" "$JSON_VENDOR_DATA")
+    OS_AUTH_URL=$(extract_json_key "auth_url_v3" "$JSON_VENDOR_DATA")
+  fi
+
+  if  [[ -n "${TESTING_SKIP_ROOT_CHECK:-}" ]]; then 
+    echo "Skipping bare-metal check (requires root privileges)"
+  else 
+    if dmesg | grep -q Hypervisor; then
+      echo "Error: cc-snapshot is only supported for baremetal instances." >&2
+      exit 1
+    fi
+  fi
+
+  export OS_REGION_NAME=$REGION
+  if [ -z "$OS_REGION_NAME" ]; then unset OS_REGION_NAME; fi
+
+  export OS_AUTH_URL=$OS_AUTH_URL
+  export OS_IDENTITY_API_VERSION=3
+  export OS_PROJECT_ID=$PROJECT_ID
+  export OS_TOKEN=$TOKEN
+  export OS_AUTH_TYPE="token"
+
+  set +e
+  openstack image list >/dev/null #2>&1
+  if [ ! $? -eq 0 ]; then
+    echo Unable to contact Glance, check username and password
     exit 1
   fi
+  set -e
+else
+  echo "[DRY_RUN] skipping vendordata & glance connectivity checks"
 fi
-
-export OS_REGION_NAME=$REGION
-if [ -z "$OS_REGION_NAME" ]; then unset OS_REGION_NAME; fi
-
-export OS_AUTH_URL=$OS_AUTH_URL
-export OS_IDENTITY_API_VERSION=3
-export OS_PROJECT_ID=$PROJECT_ID
-export OS_TOKEN=$TOKEN
-export OS_AUTH_TYPE="token"
-
-set +e
-openstack image list >/dev/null #2>&1
-if [ ! $? -eq 0 ]; then
-  echo Unable to contact Glance, check username and password
-  exit 1
-fi
-set -e
 
 #################################
 # Begin the snapshotting process
@@ -344,12 +361,11 @@ prepare_tarball(){
   n=0
   until [ $n -ge 5 ]
   do
-    run_cmd tar --create --file $CC_SNAPSHOT_TAR_PATH ${TAR_ARGS[@]} / && break
+    run_cmd tar --create --file $CC_SNAPSHOT_TAR_PATH ${TAR_ARGS[@]} -C "$SOURCE_DIR" . && break
     n=$[$n+1]
     sleep 15
   done
 }
-# Get the size of tar and warn user if exceeds threshold property
 
 create_disk_image(){
   if [ $DISTRO = $UBUNTU ]; then
@@ -379,7 +395,6 @@ create_disk_image(){
     filesystem_size=$("${du_cmd[@]}" | awk '{print $1}')
     total_disk_size=$((filesystem_size + 1500))
   fi
-
   [[ -n ${LABEL:-} ]] || {
     LABEL="$(sudo e2label $(findmnt -t ext4 -J | jq -r ".filesystems[].source" ))"
     if [ ! -L "/dev/disk/by-label/$LABEL" ]; then
@@ -482,6 +497,11 @@ upload_to_glance(){
 install_prerequisites
 prepare_tarball
 check_size
+# if source path is other than root
+if [[ "$SOURCE_DIR" != "/" ]]; then
+  echo "Tarball of $SOURCE_DIR is ready at $CC_SNAPSHOT_TAR_PATH"
+  exit 0
+fi
 create_disk_image
 upload_to_glance
 

@@ -52,6 +52,7 @@ if output=$(TESTING_SKIP_ROOT_CHECK=1 "$CC_SNAPSHOT" -d mytest 2>&1); then
     fail "Dry-run exited with error: $output"
   fi
   expected=(
+    "skipping vendordata & glance connectivity checks"
     "tar --create"
     "check snapshot size"
     "apt-get install -yq libguestfs-tools"
@@ -102,6 +103,10 @@ mkdir -p "$TESTDIR/src/subdir"
 echo hello > "$TESTDIR/src/file1.txt"
 echo world > "$TESTDIR/src/subdir/file2.txt"
 echo remove_me > "$TESTDIR/src/remove_me.txt"
+
+echo "testing custom path error on github"
+TESTING_SKIP_ROOT_CHECK=1 "$CC_SNAPSHOT" -u -s "$TESTDIR/src" mytest
+echo "return :$?"
 
 #Test 5: basic directory snapshot
 if output=$(TESTING_SKIP_ROOT_CHECK=1 "$CC_SNAPSHOT" -u -s "$TESTDIR/src" mytest 2>&1); then

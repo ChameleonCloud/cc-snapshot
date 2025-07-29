@@ -395,19 +395,24 @@ create_disk_image(){
     filesystem_size=$("${du_cmd[@]}" | awk '{print $1}')
     total_disk_size=$((filesystem_size + 1500))
   fi
-  [[ -n ${LABEL:-} ]] || {
-    LABEL="$(sudo e2label $(findmnt -t ext4 -J | jq -r ".filesystems[].source" ))"
-    if [ ! -L "/dev/disk/by-label/$LABEL" ]; then
-      LABEL="$(ls -1 /dev/disk/by-label)"
-      if [[ "$(wc -l <<<"$LABEL")" != "1" ]]; then
-        >&2 echo "Unable to auto-detect disk label: found >1 labeled disks:"
-        >&2 echo "$(sed 's/\n/ - /g' <<<"$LABEL")"
-        >&2 echo "Please try again while explicitly setting the LABEL"
-        >&2 echo "env variable to the desired disk label."
-        exit 1
+  if [[ "$DRY_RUN" != true ]]; then
+    [[ -n ${LABEL:-} ]] || {
+      LABEL="$(sudo e2label $(findmnt -t ext4 -J | jq -r ".filesystems[].source" ))"
+      if [ ! -L "/dev/disk/by-label/$LABEL" ]; then
+        LABEL="$(ls -1 /dev/disk/by-label)"
+        if [[ "$(wc -l <<<"$LABEL")" != "1" ]]; then
+          >&2 echo "Unable to auto-detect disk label: found >1 labeled disks:"
+          >&2 echo "$(sed 's/\n/ - /g' <<<"$LABEL")"
+          >&2 echo "Please try again while explicitly setting the LABEL"
+          >&2 echo "env variable to the desired disk label."
+          exit 1
+        fi
       fi
-    fi
-  }
+    }
+  else
+    LABEL="dryrun-label"
+  fi
+
   # Next ensure that the GRUB bootloader is present in the image:
   EXTRA_CMD=""
 

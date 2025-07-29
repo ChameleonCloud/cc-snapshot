@@ -84,7 +84,7 @@ fi
 # Start of custom source path tests
 TESTDIR=$(mktemp -d /tmp/cc_test.XXXXXX)
 
-export CC_SNAPSHOT_TAR_PATH=(mktemp "${PWD}/snapshot.XXXXXX.tar")
+export CC_SNAPSHOT_TAR_PATH=$(mktemp "${PWD}/snapshot.XXXXXX.tar")
 DEFAULT_TAR="$CC_SNAPSHOT_TAR_PATH"
 
 [[ "$TESTDIR"  == /tmp/cc_test.* ]] || { echo "Unsafe TESTDIR: $TESTDIR"; exit 1; }
@@ -93,6 +93,7 @@ DEFAULT_TAR="$CC_SNAPSHOT_TAR_PATH"
 cleanup() {
   rm -rf "$TESTDIR"
   rm -f   "$DEFAULT_TAR"
+  echo "Deleted directories for test"
 }
 #trap will make sure to run cleanup before exiting
 trap cleanup EXIT
@@ -104,10 +105,10 @@ echo remove_me > "$TESTDIR/src/remove_me.txt"
 
 #Test 5: basic directory snapshot
 if output=$(TESTING_SKIP_ROOT_CHECK=1 "$CC_SNAPSHOT" -u -s "$TESTDIR/src" mytest 2>&1); then
-  pass "cc-snapshot returned 0 for basic directory snapshot"
+  pass "CC-Snapshot returned 0 for basic directory snapshot"
 else
   echo "$output"
-  fail "cc-snapshot returned non-zero exit code for basic directory snapshot"
+  fail "CC-Snapshot returned non-zero exit code for basic directory snapshot"
 fi
 
 # Verify directory created
@@ -121,21 +122,41 @@ if [[ ! -s "$DEFAULT_TAR" ]]; then
 fi
 pass "Basic tarball created at $DEFAULT_TAR"
 
-# Compare all contents (including removed file)
+# -------Start comparing all contents-------
 diff \
-  <(cd "$TESTDIR/src" && find . -mindepth 1 | sed 's|^\./||; s|/$||' | sort) \
-  <(tar -tf "$DEFAULT_TAR" | sed 's|^\./||; s|/$||' | grep -v '^$' | sort) \
-  || fail "Contents mismatch for basic snapshot"
+  <(
+    # list all file/dir under source but skip the "." itself
+    cd "$TESTDIR/src" && \
+    find . -mindepth 1 | \
+    # Normalize path: drops any leading ./ and removes last slashes from directory names
+      sed 's|^\./||; s|/$||' | \
+    # puts in alphabetical order
+      sort
+  ) \
+  <(
+    # list every file/dir in the tarball
+    tar -tf "$DEFAULT_TAR" | \
+      # Normalize path: drop "./" prefix and "/" suffix
+      sed 's|^\./||; s|/$||' | \
+      # remove any blank line 
+      grep -v '^$' | \
+      # sort in alphabetical order for compresion 
+      sort
+  ) || fail "Contents mismatch for basic snapshot"
+
+# the lists matched exactly
 pass "Basic tarball content matches source directory"
+
+# -------End of compresion-------
 
 rm -f "$DEFAULT_TAR"
 
 # Test 6: test -e fage
 if output=$(TESTING_SKIP_ROOT_CHECK=1 "$CC_SNAPSHOT" -u -s $TESTDIR/src -e $TESTDIR/src/remove_me.txt exclude_test 2>&1); then
-	pass "cc-snapshot returned 0 for exclusion snapshot (-e flag)"
+	pass "CC-Snapshot returned 0 for exclusion snapshot (-e flag)"
 else
   echo "$output"
-  fail "cc-snapshot returned non-zero exit code for exclusion snapshot (-e flag)"
+  fail "CC-Snapshot returned non-zero exit code for exclusion snapshot (-e flag)"
 fi
 
 # Verify creation message for exclusion

@@ -104,10 +104,10 @@ echo remove_me > "$TESTDIR/src/remove_me.txt"
 
 #Test 5: basic directory snapshot
 if output=$(TESTING_SKIP_ROOT_CHECK=1 "$CC_SNAPSHOT" -u -s "$TESTDIR/src" mytest 2>&1); then
-  pass "ran basic directory snapshot"
+  pass "cc-snapshot returned 0 for basic directory snapshot"
 else
   echo "$output"
-  fail "cc-snapshot failed for basic snapshot"
+  fail "cc-snapshot returned non-zero exit code for basic directory snapshot"
 fi
 
 # Verify directory created
@@ -132,10 +132,10 @@ rm -f "$DEFAULT_TAR"
 
 # Test 6: test -e fage
 if output=$(TESTING_SKIP_ROOT_CHECK=1 "$CC_SNAPSHOT" -u -s $TESTDIR/src -e $TESTDIR/src/remove_me.txt exclude_test 2>&1); then
-  pass "running basic directory snapshot with -e flag"
+	pass "cc-snapshot returned 0 for exclusion snapshot (-e flag)"
 else
   echo "$output"
-  fail "cc-snapshot failed for exclusion snapshot"
+  fail "cc-snapshot returned non-zero exit code for exclusion snapshot (-e flag)"
 fi
 
 # Verify creation message for exclusion

@@ -269,60 +269,62 @@ fi
 
 # Configure env for glance to upload image
 # try vendordata2.json first and fallback to vendordata.json if empty
-JSON_VENDOR_DATA=$(curl -s $OPENSTACK_VENDOR_DATA_2)
-NEW_VENDOR_DATA=true
-if [ "$JSON_VENDOR_DATA" = '{}' ]; then
-  JSON_VENDOR_DATA=$(curl -s $OPENSTACK_VENDOR_DATA)
-  NEW_VENDOR_DATA=false
-fi
-
-if hash jq 2>/dev/null; then
-  if $NEW_VENDOR_DATA; then
-    JSON_VENDOR_DATA=$(echo $JSON_VENDOR_DATA | jq -r .chameleon)
+if [[ "$DRY_RUN" != true ]]; then
+  JSON_VENDOR_DATA=$(curl -s $OPENSTACK_VENDOR_DATA_2)
+  NEW_VENDOR_DATA=true
+  if [ "$JSON_VENDOR_DATA" = '{}' ]; then
+    JSON_VENDOR_DATA=$(curl -s $OPENSTACK_VENDOR_DATA)
+    NEW_VENDOR_DATA=false
   fi
-  SITE=$(echo $JSON_VENDOR_DATA | jq -r .site)
-  REGION=$(echo $JSON_VENDOR_DATA | jq -r .region)
-  PROJECT_ID=$(echo $JSON_VENDOR_DATA | jq -r .project_id)
-  TOKEN=$(echo $JSON_VENDOR_DATA | jq -r .service_token)
-  OS_AUTH_URL=$(echo $JSON_VENDOR_DATA | jq -r .auth_url_v3)
-else
-  # jq not available
-  function extract_json_key {
-    RESULT=$(echo "$2" | sed "s/.*$1\": \"//g" | sed 's/".*//g')
-    echo "$RESULT"
-  }
-  SITE=$(extract_json_key "site" "$JSON_VENDOR_DATA")
-  REGION=$(extract_json_key "region" "$JSON_VENDOR_DATA")
-  PROJECT_ID=$(extract_json_key "project_id" "$JSON_VENDOR_DATA")
-  TOKEN=$(extract_json_key "service_token" "$JSON_VENDOR_DATA")
-  OS_AUTH_URL=$(extract_json_key "auth_url_v3" "$JSON_VENDOR_DATA")
-fi
 
-if  [[ -n "${TESTING_SKIP_ROOT_CHECK:-}" ]]; then 
-  echo "Skipping bare-metal check (requires root privileges)"
-else 
-  if dmesg | grep -q Hypervisor; then
-    echo "Error: cc-snapshot is only supported for baremetal instances." >&2
+  if hash jq 2>/dev/null; then
+    if $NEW_VENDOR_DATA; then
+      JSON_VENDOR_DATA=$(echo $JSON_VENDOR_DATA | jq -r .chameleon)
+    fi
+    SITE=$(echo $JSON_VENDOR_DATA | jq -r .site)
+    REGION=$(echo $JSON_VENDOR_DATA | jq -r .region)
+    PROJECT_ID=$(echo $JSON_VENDOR_DATA | jq -r .project_id)
+    TOKEN=$(echo $JSON_VENDOR_DATA | jq -r .service_token)
+    OS_AUTH_URL=$(echo $JSON_VENDOR_DATA | jq -r .auth_url_v3)
+  else
+    # jq not available
+    function extract_json_key {
+      RESULT=$(echo "$2" | sed "s/.*$1\": \"//g" | sed 's/".*//g')
+      echo "$RESULT"
+    }
+    SITE=$(extract_json_key "site" "$JSON_VENDOR_DATA")
+    REGION=$(extract_json_key "region" "$JSON_VENDOR_DATA")
+    PROJECT_ID=$(extract_json_key "project_id" "$JSON_VENDOR_DATA")
+    TOKEN=$(extract_json_key "service_token" "$JSON_VENDOR_DATA")
+    OS_AUTH_URL=$(extract_json_key "auth_url_v3" "$JSON_VENDOR_DATA")
+  fi
+
+  if  [[ -n "${TESTING_SKIP_ROOT_CHECK:-}" ]]; then 
+    echo "Skipping bare-metal check (requires root privileges)"
+  else 
+    if dmesg | grep -q Hypervisor; then
+      echo "Error: cc-snapshot is only supported for baremetal instances." >&2
+      exit 1
+    fi
+  fi
+
+  export OS_REGION_NAME=$REGION
+  if [ -z "$OS_REGION_NAME" ]; then unset OS_REGION_NAME; fi
+
+  export OS_AUTH_URL=$OS_AUTH_URL
+  export OS_IDENTITY_API_VERSION=3
+  export OS_PROJECT_ID=$PROJECT_ID
+  export OS_TOKEN=$TOKEN
+  export OS_AUTH_TYPE="token"
+
+  set +e
+  openstack image list >/dev/null #2>&1
+  if [ ! $? -eq 0 ]; then
+    echo Unable to contact Glance, check username and password
     exit 1
   fi
+  set -e
 fi
-
-export OS_REGION_NAME=$REGION
-if [ -z "$OS_REGION_NAME" ]; then unset OS_REGION_NAME; fi
-
-export OS_AUTH_URL=$OS_AUTH_URL
-export OS_IDENTITY_API_VERSION=3
-export OS_PROJECT_ID=$PROJECT_ID
-export OS_TOKEN=$TOKEN
-export OS_AUTH_TYPE="token"
-
-set +e
-openstack image list >/dev/null #2>&1
-if [ ! $? -eq 0 ]; then
-  echo Unable to contact Glance, check username and password
-  exit 1
-fi
-set -e
 
 #################################
 # Begin the snapshotting process

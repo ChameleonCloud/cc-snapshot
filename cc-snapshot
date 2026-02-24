@@ -78,7 +78,7 @@ check_size(){
   fi
 }
 
-while getopts "hpe:fyduso:z" opt; do
+while getopts "hpe:fyduos:z" opt; do
   case $opt in
     h)
       print_usage

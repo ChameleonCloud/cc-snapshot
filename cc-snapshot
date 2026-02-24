@@ -33,7 +33,7 @@ FORCE_YES=false
 SKIP_UPDATE=false
 DRY_RUN=false
 USE_OS_ENV=false
-USE_LEGACY_ZLIB=false
+USE_ZSTD=false
 SOURCE_DIR="/"
 
 print_usage() {
@@ -48,7 +48,7 @@ print_usage() {
   echo "  -u        Skip the automatic self-update check"
   echo "  -s        Specify any path other than root for snapshoting"
   echo "  -o        Use existing OpenStack environment credentials instead of vendor data"
-  echo "  -z        Use legacy zlib compression (default is zstd)"
+  echo "  -z        Use faster zstd compression (default is zlib). Note: launching images compressed with zstd may not be supported on all sites."
   echo ""
   echo " cc-snapshot version 0.2.0"
 }
@@ -110,7 +110,7 @@ while getopts "hpe:fyduos:z" opt; do
       USE_OS_ENV=true
       ;;
     z)
-      USE_LEGACY_ZLIB=true
+      USE_ZSTD=true
       ;;
     \?)
       echo "Invalid option: -$OPTARG" >&2
@@ -490,10 +490,14 @@ create_disk_image(){
   run_cmd virt-sysprep -a $CC_SNAPSHOT_CONVERTED_PATH
 
   # To complete the preparation of your snapshot image, create a compressed version of it:
-  if [[ "$USE_LEGACY_ZLIB" == true ]]; then
-    run_cmd qemu-img convert $CC_SNAPSHOT_CONVERTED_PATH -O $CC_SNAPSHOT_DISK_FORMAT $CC_SNAPSHOT_CONVERTED_COMPRESSED_PATH -c
-  else
+  if [[ "$USE_ZSTD" == true ]]; then
+    echo "INFO: Using zstd compression for qcow2 image."
+    echo "INFO: After upload, please verify you can successfully launch an instance from this image. Some sites may not support images compressed with zstd."
+    COMPRESSION_TYPE="zstd"
     run_cmd qemu-img convert $CC_SNAPSHOT_CONVERTED_PATH -O $CC_SNAPSHOT_DISK_FORMAT -c -o compression_type=zstd $CC_SNAPSHOT_CONVERTED_COMPRESSED_PATH
+  else
+    COMPRESSION_TYPE="zlib"
+    run_cmd qemu-img convert $CC_SNAPSHOT_CONVERTED_PATH -O $CC_SNAPSHOT_DISK_FORMAT $CC_SNAPSHOT_CONVERTED_COMPRESSED_PATH -c
   fi
 }
 
@@ -503,7 +507,8 @@ create_disk_image(){
 upload_to_glance(){
   # build the command once
   local CMD=(openstack image create --disk-format "$CC_SNAPSHOT_DISK_FORMAT" \
-              --container-format bare $PROVENANCE_PROPERTIES "$SNAPSHOT_NAME")
+              --container-format bare \
+              --property "compression_type=$COMPRESSION_TYPE" $PROVENANCE_PROPERTIES "$SNAPSHOT_NAME")
   if [[ "$DRY_RUN" == true ]]; then
     echo "[DRY_RUN] ${CMD[*]} < $CC_SNAPSHOT_CONVERTED_COMPRESSED_PATH"
     return 0

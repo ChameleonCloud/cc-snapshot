@@ -48,7 +48,7 @@ print_usage() {
   echo "  -u        Skip the automatic self-update check"
   echo "  -s        Specify any path other than root for snapshoting"
   echo "  -o        Use existing OpenStack environment credentials instead of vendor data"
-  echo "  -z        Use faster zstd compression (default is zlib). Note: launching images compressed with zstd may not be supported on all sites."
+  echo "  -z        Use faster zstd compression (default is zlib). Note: launching images compressed with zstd may not be supported on sites running OpenStack Xena or earlier."
   echo ""
   echo " cc-snapshot version 0.2.0"
 }
@@ -492,7 +492,7 @@ create_disk_image(){
   # To complete the preparation of your snapshot image, create a compressed version of it:
   if [[ "$USE_ZSTD" == true ]]; then
     echo "INFO: Using zstd compression for qcow2 image."
-    echo "INFO: After upload, please verify you can successfully launch an instance from this image. Some sites may not support images compressed with zstd."
+    echo "INFO: After upload, please verify you can successfully launch an instance from this image. Sites running OpenStack Xena or earlier may not support images compressed with zstd."
     COMPRESSION_TYPE="zstd"
     run_cmd qemu-img convert $CC_SNAPSHOT_CONVERTED_PATH -O $CC_SNAPSHOT_DISK_FORMAT -c -o compression_type=zstd $CC_SNAPSHOT_CONVERTED_COMPRESSED_PATH
   else

@@ -16,7 +16,7 @@ pass() {
 TEST_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CC_SNAPSHOT="${TEST_SCRIPT_DIR}/../cc-snapshot"
 
-#Test if the path exist 
+#Test if the path exist
 if [[ ! -x "${CC_SNAPSHOT}" ]]; then
     echo "Error: unable to find ${CC_SNAPSHOT} or it is not executable"
     exit 1
@@ -38,12 +38,12 @@ else
   fail "-e without folder did not fail as expected"
 fi
 
-#Test 3: running with an invalid flag (-z)
-output=$(TESTING_SKIP_ROOT_CHECK=1 "$CC_SNAPSHOT" -z 2>&1) && status=0 || status=$?
+#Test 3: running with an invalid flag (-a)
+output=$(TESTING_SKIP_ROOT_CHECK=1 "$CC_SNAPSHOT" -a 2>&1) && status=0 || status=$?
 if [[ $status -ne 0 && "$output" == *"usage:"* ]]; then
-  pass "Invalid flag (-z) is handled with error"
+  pass "Invalid flag (-a) is handled with error"
 else
-  fail "Invalid flag (-z) did not trigger error as expected"
+  fail "Invalid flag (-a) did not trigger error as expected"
 fi
 
 #Test 4: Dry-run does not error and prints each step
@@ -67,13 +67,13 @@ if output=$(TESTING_SKIP_ROOT_CHECK=1 "$CC_SNAPSHOT" -d mytest 2>&1); then
 
   missing=0
   for pat in "${expected[@]}"; do
-    if ! grep -q "\[DRY_RUN\].*${pat}" <<<"$output"; then 
+    if ! grep -q "\[DRY_RUN\].*${pat}" <<<"$output"; then
       echo "Missing Dry-run for: $pat" >&2
       missing=$((missing+1))
     fi
   done
 
-  if (( missing > 0 )); then 
+  if (( missing > 0 )); then
     fail "Dry-run is missing $missing expected steps"
   else
     pass "Dry-run printed all ${#expected[@]} steps without error"
@@ -139,9 +139,9 @@ diff \
     tar -tf "$DEFAULT_TAR" | \
       # Normalize path: drop "./" prefix and "/" suffix
       sed 's|^\./||; s|/$||' | \
-      # remove any blank line 
+      # remove any blank line
       grep -v '^$' | \
-      # sort in alphabetical order for compresion 
+      # sort in alphabetical order for compresion
       sort
   ) || fail "Contents mismatch for basic snapshot"
 

@@ -246,6 +246,8 @@ var/lib/gssproxy/*.sock
 var/spool/postfix
 # Swift cloudfuse mount
 home/cc/my_mounting_point
+# cc-login cache
+home/cc/.cache/ccauth
 # Ubuntu lxcfs
 var/lib/lxcfs
 # User excludes

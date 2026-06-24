@@ -5,13 +5,6 @@ if [[ $EUID -ne 0 && -z ${TESTING_SKIP_ROOT_CHECK} ]]; then
 fi
 
 # ===============================================================================
-## Properties
-# ===============================================================================
-## OpenStack Properties
-# ===============================================================================
-OPENSTACK_VENDOR_DATA='http://169.254.169.254/openstack/latest/vendor_data.json'
-OPENSTACK_VENDOR_DATA_2='http://169.254.169.254/openstack/latest/vendor_data2.json'
-# ===============================================================================
 ## Chameleon Properties
 # ===============================================================================
 PROVENANCE_FILE='/opt/chameleon/provenance.json'
@@ -32,7 +25,7 @@ IGNORE_WARNING=false
 FORCE_YES=false
 SKIP_UPDATE=false
 DRY_RUN=false
-USE_OS_ENV=false
+USE_OS_ENV=true
 USE_ZSTD=false
 SOURCE_DIR="/"
 
@@ -47,7 +40,7 @@ print_usage() {
   echo "  -d        Dry run prints each step instead of running snapshot script"
   echo "  -u        Skip the automatic self-update check"
   echo "  -s        Specify any path other than root for snapshoting"
-  echo "  -o        Use existing OpenStack environment credentials instead of vendor data"
+  echo "  -o        Use existing OpenStack environment credentials (enabled by default; kept for backwards compatibility)"
   echo "  -z        Use faster zstd compression (default is zlib). Note: launching images compressed with zstd may not be supported on sites running OpenStack Xena or earlier."
   echo ""
   echo " cc-snapshot version 0.2.0"
@@ -279,50 +272,18 @@ if [ $DISTRO = $CENTOS_STREAM ]; then
     CENTOS_STREAM_VERSION=$(gawk -F= '/^VERSION_ID/{print $2}' /etc/os-release | tr -d \"\' | tr ' ' '-')
 fi
 
-# Configure env for glance to upload image
-# try vendordata2.json first and fallback to vendordata.json if empty
+# Glance upload relies on OpenStack credentials already present in the
+# environment (e.g. via ccauth/clouds.yaml and OS_CLOUD, run with `sudo -E`).
 if [[ "$DRY_RUN" != true && "$SOURCE_DIR" == "/" ]]; then
-  if [[ "$USE_OS_ENV" == false ]]; then
-    JSON_VENDOR_DATA=$(curl -s $OPENSTACK_VENDOR_DATA_2)
-    NEW_VENDOR_DATA=true
-    if [ "$JSON_VENDOR_DATA" = '{}' ]; then
-      JSON_VENDOR_DATA=$(curl -s $OPENSTACK_VENDOR_DATA)
-      NEW_VENDOR_DATA=false
-    fi
-
-    if hash jq 2>/dev/null; then
-      if $NEW_VENDOR_DATA; then
-        JSON_VENDOR_DATA=$(echo $JSON_VENDOR_DATA | jq -r .chameleon)
-      fi
-      SITE=$(echo $JSON_VENDOR_DATA | jq -r .site)
-      REGION=$(echo $JSON_VENDOR_DATA | jq -r .region)
-      PROJECT_ID=$(echo $JSON_VENDOR_DATA | jq -r .project_id)
-      TOKEN=$(echo $JSON_VENDOR_DATA | jq -r .service_token)
-      OS_AUTH_URL=$(echo $JSON_VENDOR_DATA | jq -r .auth_url_v3)
-    else
-      # jq not available
-      function extract_json_key {
-        RESULT=$(echo "$2" | sed "s/.*$1\": \"//g" | sed 's/".*//g')
-        echo "$RESULT"
-      }
-      SITE=$(extract_json_key "site" "$JSON_VENDOR_DATA")
-      REGION=$(extract_json_key "region" "$JSON_VENDOR_DATA")
-      PROJECT_ID=$(extract_json_key "project_id" "$JSON_VENDOR_DATA")
-      TOKEN=$(extract_json_key "service_token" "$JSON_VENDOR_DATA")
-      OS_AUTH_URL=$(extract_json_key "auth_url_v3" "$JSON_VENDOR_DATA")
-    fi
-
-    export OS_REGION_NAME=$REGION
-    if [ -z "$OS_REGION_NAME" ]; then unset OS_REGION_NAME; fi
-
-    export OS_AUTH_URL=$OS_AUTH_URL
-    export OS_IDENTITY_API_VERSION=3
-    export OS_PROJECT_ID=$PROJECT_ID
-    export OS_TOKEN=$TOKEN
-    export OS_AUTH_TYPE="token"
-  else
-    echo "Using existing OpenStack environment credentials."
+  if [[ -z "${OS_CLOUD:-}" && -z "${OS_AUTH_URL:-}" && -z "${OS_TOKEN:-}" ]]; then
+    echo "Error: no OpenStack credentials found in the environment." >&2
+    echo "Set up credentials first, e.g. with ccauth." >&2
+    echo "  ccauth clouds-yaml --output ~/.config/openstack/clouds.yaml" >&2
+    echo "  export OS_CLOUD=<cloud-name-here>" >&2
+    echo "and re-run with 'sudo -E' so root inherits OS_CLOUD." >&2
+    exit 1
   fi
+  echo "Using existing OpenStack environment credentials."
 
   if  [[ -n "${TESTING_SKIP_ROOT_CHECK:-}" ]]; then
     echo "Skipping bare-metal check (requires root privileges)"
@@ -336,12 +297,13 @@ if [[ "$DRY_RUN" != true && "$SOURCE_DIR" == "/" ]]; then
   set +e
   openstack image list >/dev/null #2>&1
   if [ ! $? -eq 0 ]; then
-    echo Unable to contact Glance, check username and password
+    echo "Unable to contact Glance, check your OpenStack credentials." >&2
+    echo "Verify OS_CLOUD/clouds.yaml are set up correctly (see ccauth)." >&2
     exit 1
   fi
   set -e
 else
-  echo "[DRY_RUN] skipping vendordata & glance connectivity checks"
+  echo "[DRY_RUN] skipping glance connectivity checks"
 fi
 
 #################################

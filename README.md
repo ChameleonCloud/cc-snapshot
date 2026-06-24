@@ -11,15 +11,19 @@ The script requires the following dependencies:
 
 ## Usage
 
-**Use this script from a Chameleon baremetal instance**. To snapshot a baremetal instance, when logged into the instance via SSH, run cc-snapshot with the following command:
+**Use this script from a Chameleon baremetal instance**. cc-snapshot uploads the snapshot via the OpenStack CLI, so you need OpenStack credentials available in the environment first. We recommend [ccauth](https://github.com/ChameleonCloud/ccauth).
+
+Once you have auth configured for your environment and you log into the instance, run cc-snapshot with the following command:
 
 ```
-sudo cc-snapshot [snapshot_name]
+sudo -E cc-snapshot [snapshot_name]
 ```
+
+`-E` is required so root can see `OS_CLOUD` and reuse your cached ccauth credentials.
 
 You can optionally specify a snapshot name. If no argument is present, the snapshot name is set to the instance hostname followed by a universally unique identifier.
 
-cc-snapshot will ask for your Chameleon password, and after a few minutes, a snapshot will be uploaded in the image repository of the instance's site (UC or TACC).
+After a few minutes, a snapshot will be uploaded in the image repository of the instance's site.
 
 ## Troubleshooting
 

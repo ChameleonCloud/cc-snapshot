@@ -52,7 +52,7 @@ if output=$(TESTING_SKIP_ROOT_CHECK=1 "$CC_SNAPSHOT" -d mytest 2>&1); then
     fail "Dry-run exited with error: $output"
   fi
   expected=(
-    "skipping vendordata & glance connectivity checks"
+    "skipping glance connectivity checks"
     "tar --create"
     "check snapshot size"
     "apt-get install -yq libguestfs-tools"
